@@ -18,8 +18,8 @@ export default function Login() {
     e.preventDefault();
 
     // Usuario y contraseña configurados
-    const USER = "admin";
-    const PASS = "anistream123";
+    const USER = "admin2025";
+    const PASS = "anistream959123";
 
     if (user === USER && password === PASS) {
       localStorage.setItem("loggedIn", "true");
