@@ -1,4 +1,5 @@
 import { useState } from "react";
+import AdZones from "../components/AdZones";
 import Head from "next/head";
 import Link from "next/link";
 import data from "../data/videos.json";
@@ -39,6 +40,11 @@ export default function Home() {
         <h1 className="text-3xl font-bold mb-6 text-center">
           Catálogo de Series
         </h1>
+
+        <AdZones
+         imageUrl="/ads/banner1.jpg"
+        link="https://tuenlace.com"
+        />
 
         {/* 🔍 Barra de búsqueda */}
         <div className="flex justify-center mb-8">

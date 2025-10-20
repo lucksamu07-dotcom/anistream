@@ -1,3 +1,4 @@
+import AdZones from "../../components/AdZones";
 import { useRouter } from "next/router";
 import { useEffect, useState } from "react";
 
@@ -12,6 +13,9 @@ export default function VideoPage() {
 
   useEffect(() => {
     if (!slug) return;
+
+    {/* 👇 Aquí mostramos los anuncios */}
+    <AdZones />
 
     const load = async () => {
       const res = await fetch("/api/mock/read");
