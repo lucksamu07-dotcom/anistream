@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+html, body {
+  scroll-behavior: smooth;
+}
+
+.backdrop-blur-md {
+  backdrop-filter: blur(10px);
+}
+
+
+html, body, #__next {
+  height: 100%;
+  background: #0b0b0c url("/images/fondo-anime.jpg") no-repeat center center fixed;
+  background-size: cover;
+  color: #e6e6e6;
+  font-family: Arial, sans-serif;
+}
+
+:root {
+  --plyr-color-main: #a855f7; /* color morado de AniStream+ */
+}
+
+body {
+  background-color: #0a0a0a;
+}
+html {
+  scroll-behavior: smooth;
+}
+
+* {
+  transition: all 0.2s ease-in-out;
+}
