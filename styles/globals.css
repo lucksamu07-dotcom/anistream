@@ -1,0 +1,80 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --ease-fluid: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 180ms;
+  --duration-base: 320ms;
+}
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+html, body {
+  scroll-behavior: smooth;
+}
+
+.backdrop-blur-md {
+  backdrop-filter: blur(10px);
+}
+
+
+html, body, #__next {
+  height: 100%;
+  background: #0b0b0c url("/images/fondo-anime.jpg") no-repeat center center fixed;
+  background-size: cover;
+  color: #e6e6e6;
+  font-family: Arial, sans-serif;
+}
+
+:root {
+  --plyr-color-main: #a855f7; /* color morado de AniStream+ */
+}
+
+body {
+  background-color: #0a0a0a;
+}
+html {
+  scroll-behavior: smooth;
+}
+
+.fluid-enter {
+  animation: fluidEnter var(--duration-base) var(--ease-fluid) both;
+}
+
+@keyframes fluidEnter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.interactive {
+  transition:
+    transform var(--duration-base) var(--ease-fluid),
+    box-shadow var(--duration-fast) ease-out,
+    background-color var(--duration-fast) ease-out,
+    border-color var(--duration-fast) ease-out,
+    color var(--duration-fast) ease-out,
+    opacity var(--duration-fast) ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html, body {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
