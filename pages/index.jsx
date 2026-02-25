@@ -3,9 +3,54 @@ import Head from "next/head";
 import Link from "next/link";
 import data from "../data/videos.json";
 
+const CATEGORY_OPTIONS = [
+  "vanilla",
+  "romance",
+  "comedia",
+  "drama",
+  "fantasía",
+  "histórico",
+  "escolar",
+  "horror erótico",
+  "isekai",
+  "BDSM",
+  "dominación",
+  "sumisión",
+  "femdom",
+  "bondage",
+  "shibari",
+  "tentáculos",
+  "monster girls",
+  "futanari",
+  "yuri",
+  "yaoi",
+  "NTR",
+  "harem",
+  "reverse harem",
+  "ahegao",
+  "hypnosis",
+  "mind control",
+  "mind break",
+  "voyeurismo",
+  "exhibicionismo",
+  "humiliation",
+  "corruption",
+  "esclavitud",
+  "gender bender",
+  "body swap",
+  "transformation",
+  "omegaverse",
+  "gangbang",
+  "threesome",
+  "crossdressing",
+  "giantess",
+  "inflation",
+];
+
 export default function Home() {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeCard, setActiveCard] = useState(null);
+  const [activeCategory, setActiveCategory] = useState("");
 
   const handleCardClick = (animeId) => {
     if (activeCard === animeId) {
@@ -19,11 +64,20 @@ export default function Home() {
 
   const filteredAnimes = data.filter((anime) => {
     const term = searchTerm.toLowerCase();
-    return (
+    const genreText = Array.isArray(anime.genre)
+      ? anime.genre.join(", ").toLowerCase()
+      : (anime.genre || "").toLowerCase();
+    const descriptionText = (anime.description || anime.synopsis || "").toLowerCase();
+
+    const matchesSearch =
       anime.title.toLowerCase().includes(term) ||
-      (Array.isArray(anime.genre) &&
-        anime.genre.join(", ").toLowerCase().includes(term)) ||
-      anime.year.toString().includes(term)
+      genreText.includes(term) ||
+      anime.year.toString().includes(term);
+
+    const matchesCategory = !activeCategory || genreText.includes(activeCategory.toLowerCase());
+
+    return (
+      matchesSearch && (matchesCategory || descriptionText.includes(activeCategory.toLowerCase()))
     );
   });
 
@@ -47,6 +101,40 @@ export default function Home() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+
+        <section className="mb-8" aria-label="Categorias">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-pink-400 sm:text-lg">Categorias</h2>
+            {activeCategory && (
+              <button
+                type="button"
+                onClick={() => setActiveCategory("")}
+                className="interactive rounded-md border border-white/15 px-2 py-1 text-xs text-neutral-300 hover:border-pink-500/60 hover:text-white"
+              >
+                Limpiar filtro
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {CATEGORY_OPTIONS.map((category) => {
+              const isActive = activeCategory === category;
+              return (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setActiveCategory(category)}
+                  className={`interactive rounded-full border px-3 py-1 text-xs sm:text-sm ${
+                    isActive
+                      ? "border-pink-500 bg-pink-600 text-white"
+                      : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-pink-500/50 hover:text-white"
+                  }`}
+                >
+                  {category}
+                </button>
+              );
+            })}
+          </div>
+        </section>
 
         {filteredAnimes.length > 0 ? (
           <section id="categorias" className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-5 md:grid-cols-4 lg:grid-cols-5">
