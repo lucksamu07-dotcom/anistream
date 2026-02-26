@@ -1,5 +1,50 @@
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Player from "../../components/Player";
+
+function normalizeGenres(genre) {
+  if (Array.isArray(genre)) return genre.filter(Boolean).map((g) => String(g).trim());
+  if (typeof genre === "string") {
+    return genre
+      .split(",")
+      .map((g) => g.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function getEpisodeNumber(episode) {
+  const text = `${episode?.id || ""} ${episode?.slug || ""} ${episode?.title || ""}`;
+  const match = text.match(/(?:ep|episodio)?\s*0*(\d{1,4})/i);
+  return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+}
+
+function buildSourceOptions(episode) {
+  if (!episode) return [];
+
+  if (Array.isArray(episode.sources) && episode.sources.length > 0) {
+    return episode.sources
+      .map((source, index) => {
+        if (typeof source === "string") {
+          return { label: `Servidor ${index + 1}`, url: source };
+        }
+        if (source && source.url) {
+          return {
+            label: source.label || source.server || `Servidor ${index + 1}`,
+            url: source.url,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }
+
+  if (episode.sourceUrl) {
+    return [{ label: "Principal", url: episode.sourceUrl }];
+  }
+
+  return [];
+}
 
 export default function VideoPage() {
   const router = useRouter();
@@ -9,6 +54,7 @@ export default function VideoPage() {
   const [views, setViews] = useState(0);
   const [isFavorite, setIsFavorite] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [activeSourceUrl, setActiveSourceUrl] = useState("");
 
   useEffect(() => {
     if (!slug) return;
@@ -21,11 +67,16 @@ export default function VideoPage() {
         a.episodes.some((ep) => ep.slug === slug)
       );
       const foundVideo = foundAnime?.episodes.find((ep) => ep.slug === slug);
-      const index = foundAnime?.episodes.findIndex((ep) => ep.slug === slug);
+      const sortedEpisodes = [...(foundAnime?.episodes || [])].sort(
+        (a, b) => getEpisodeNumber(a) - getEpisodeNumber(b)
+      );
+      const index = sortedEpisodes.findIndex((ep) => ep.slug === slug);
 
       setAnime(foundAnime);
       setVideo(foundVideo);
       setCurrentIndex(index);
+      const sources = buildSourceOptions(foundVideo);
+      setActiveSourceUrl(sources[0]?.url || "");
 
       const savedViews = JSON.parse(localStorage.getItem("animeViews") || "{}");
       const currentViews = savedViews[foundAnime?.id] || 0;
@@ -50,6 +101,17 @@ export default function VideoPage() {
     setIsFavorite(!isFavorite);
   };
 
+  const orderedEpisodes = useMemo(
+    () => [...(anime?.episodes || [])].sort((a, b) => getEpisodeNumber(a) - getEpisodeNumber(b)),
+    [anime]
+  );
+  const genres = useMemo(() => normalizeGenres(anime?.genre), [anime]);
+  const sourceOptions = useMemo(() => buildSourceOptions(video), [video]);
+  const episodeNumber = getEpisodeNumber(video);
+  const episodeLabel = Number.isFinite(episodeNumber)
+    ? `Episodio ${episodeNumber}`
+    : video?.title || "Episodio";
+
   if (!video || !anime) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-950 text-white">
@@ -58,22 +120,10 @@ export default function VideoPage() {
     );
   }
 
-  const formatEmbed = (url) => {
-    if (url.includes("streamtape.com")) {
-      const id = url.split("/e/")[1];
-      return `https://streamtape.com/e/${id}`;
-    }
-    if (url.includes("dood.")) {
-      const id = url.split("/e/")[1];
-      return `https://dood.wf/e/${id}`;
-    }
-    return url;
-  };
-
-  const previousEpisode = currentIndex > 0 ? anime.episodes[currentIndex - 1] : null;
+  const previousEpisode = currentIndex > 0 ? orderedEpisodes[currentIndex - 1] : null;
   const nextEpisode =
-    currentIndex < anime.episodes.length - 1
-      ? anime.episodes[currentIndex + 1]
+    currentIndex < orderedEpisodes.length - 1
+      ? orderedEpisodes[currentIndex + 1]
       : null;
 
   return (
@@ -81,7 +131,7 @@ export default function VideoPage() {
       <div className="flex-1 p-3 sm:p-4 md:p-8">
         <div className="mb-2 flex items-start justify-between gap-3">
           <h1 className="fluid-enter text-xl font-bold text-pink-500 sm:text-2xl">
-            {video.title}
+            {anime.title}
           </h1>
 
           <button
@@ -94,18 +144,38 @@ export default function VideoPage() {
         </div>
 
         <p className="mb-1 text-xs text-neutral-400 sm:text-sm">
-          {anime.title} - {anime.year} - {anime.genre}
+          {episodeLabel} {video.title && video.title !== episodeLabel ? `- ${video.title}` : ""}
+        </p>
+        <p className="mb-1 text-xs text-neutral-500">
+          {anime.year} {genres.length ? `- ${genres.join(", ")}` : ""}
         </p>
         <p className="mb-4 text-xs text-neutral-500">{views} vistas</p>
 
+        {sourceOptions.length > 1 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-neutral-400">Servidor:</span>
+            {sourceOptions.map((source) => {
+              const isActive = activeSourceUrl === source.url;
+              return (
+                <button
+                  key={`${source.label}-${source.url}`}
+                  type="button"
+                  onClick={() => setActiveSourceUrl(source.url)}
+                  className={`interactive rounded-full border px-3 py-1 text-xs ${
+                    isActive
+                      ? "border-pink-500 bg-pink-600 text-white"
+                      : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-pink-500/50 hover:text-white"
+                  }`}
+                >
+                  {source.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div className="mb-6 aspect-video overflow-hidden rounded-xl bg-black shadow-lg shadow-pink-500/10">
-          <iframe
-            src={formatEmbed(video.sourceUrl)}
-            frameBorder="0"
-            allowFullScreen
-            className="h-full w-full"
-            title={video.title}
-          />
+          <Player url={activeSourceUrl || sourceOptions[0]?.url || ""} title={video.title} />
         </div>
 
         <div className="mb-8 flex flex-wrap gap-2 sm:gap-3">

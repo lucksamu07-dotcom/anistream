@@ -1,4 +1,5 @@
 import "../styles/globals.css";
+import "plyr/dist/plyr.css";
 import Navbar from "../components/Navbar";
 import { SessionProvider } from "next-auth/react";
 import { useState, useEffect } from "react";
