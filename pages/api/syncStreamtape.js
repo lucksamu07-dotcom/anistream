@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { requireAdminApi } from "../../lib/adminAuth";
 
 const DATA_PATH = path.join(process.cwd(), "data", "animes.json");
 
@@ -22,6 +23,8 @@ const fixStreamtapeUrl = (url) =>
   url.replace("/v/", "/e/");
 
 export default async function handler(req, res) {
+  if (!requireAdminApi(req, res)) return;
+
   try {
     // Simulación: aquí deberías meter tu lista real de videos
     const streamtapeVideos = [

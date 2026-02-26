@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 
 export default function Login() {
@@ -6,35 +6,50 @@ export default function Login() {
   const [user, setUser] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Si ya está logueado, redirige al panel
-    if (localStorage.getItem("loggedIn") === "true") {
-      router.push("/admin");
-    }
-  }, []);
+    const check = async () => {
+      try {
+        const res = await fetch("/api/admin/me");
+        if (res.ok) router.push("/admin");
+      } catch {
+        // no-op
+      }
+    };
+    check();
+  }, [router]);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
+    setError("");
+    setLoading(true);
 
-    // Usuario y contraseña configurados
-    const USER = "admin2025";
-    const PASS = "anistream959123";
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user, password }),
+      });
+      const data = await res.json();
 
-    if (user === USER && password === PASS) {
-      localStorage.setItem("loggedIn", "true");
+      if (!res.ok) {
+        setError(data?.message || "No se pudo iniciar sesion");
+        return;
+      }
+
       router.push("/admin");
-    } else {
-      setError("❌ Usuario o contraseña incorrectos");
+    } catch {
+      setError("Error de red al iniciar sesion");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-neutral-950 flex items-center justify-center text-white">
       <div className="bg-neutral-900 p-8 rounded-2xl shadow-lg w-80">
-        <h1 className="text-2xl font-bold text-center text-pink-500 mb-6">
-          Acceso Administrador
-        </h1>
+        <h1 className="text-2xl font-bold text-center text-pink-500 mb-6">Acceso Administrador</h1>
 
         <form onSubmit={handleLogin} className="flex flex-col gap-3">
           <input
@@ -46,7 +61,7 @@ export default function Login() {
           />
           <input
             type="password"
-            placeholder="Contraseña"
+            placeholder="Contrasena"
             className="input"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -54,11 +69,8 @@ export default function Login() {
 
           {error && <p className="text-red-400 text-sm text-center">{error}</p>}
 
-          <button
-            type="submit"
-            className="btn bg-pink-600 hover:bg-pink-700 mt-2"
-          >
-            Iniciar sesión
+          <button type="submit" className="btn bg-pink-600 hover:bg-pink-700 mt-2" disabled={loading}>
+            {loading ? "Entrando..." : "Iniciar sesion"}
           </button>
         </form>
       </div>
