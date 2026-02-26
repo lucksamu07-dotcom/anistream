@@ -1,4 +1,5 @@
 ﻿import { fetchEpisodesDeepByTitle } from "../../../lib/metadataEnricher";
+import { requireAdminAccess } from "../../../lib/adminSecurity";
 
 function normalizeText(text) {
   return String(text || "")
@@ -11,9 +12,16 @@ function normalizeText(text) {
 }
 
 function getEpisodeNumber(episode) {
-  const text = `${episode?.id || ""} ${episode?.slug || ""} ${episode?.title || ""}`;
-  const match = text.match(/(?:ep|episodio)?\s*0*(\d{1,4})/i);
-  return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+  const text = `${episode?.title || ""} ${episode?.slug || ""} ${episode?.id || ""}`.toLowerCase();
+  const strong =
+    text.match(/(?:episodio|episode|ep|capitulo|cap)\s*[-#:.\s]*0*(\d{1,4})\b/i)?.[1] ||
+    text.match(/(?:^|[^a-z])e\s*0*(\d{1,4})(?:[^a-z]|$)/i)?.[1];
+  if (strong) return Number(strong);
+  const numbers = [...text.matchAll(/\b(\d{1,4})\b/g)].map((m) => Number(m[1]));
+  if (numbers.length === 0) return Number.POSITIVE_INFINITY;
+  const last = numbers[numbers.length - 1];
+  if (last >= 1900 && last <= 2100) return Number.POSITIVE_INFINITY;
+  return last;
 }
 
 function titleSimilarity(a, b) {
@@ -53,6 +61,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ message: "Metodo no permitido" });
   }
+  if (!requireAdminAccess(req, res)) return;
 
   const title = String(req.body?.title || "").trim();
   const episodes = Array.isArray(req.body?.episodes) ? req.body.episodes : [];
@@ -74,6 +83,7 @@ export default async function handler(req, res) {
         ...episode,
         sourceUrl: match.sourceUrl,
         sources: Array.isArray(match.sources) ? match.sources : [],
+        updatedAt: new Date().toISOString(),
       };
     });
 

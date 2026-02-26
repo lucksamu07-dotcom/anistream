@@ -1,9 +1,11 @@
 ﻿import { enrichCatalog } from "../../../lib/metadataEnricher";
+import { requireAdminAccess } from "../../../lib/adminSecurity";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ message: "Metodo no permitido" });
   }
+  if (!requireAdminAccess(req, res)) return;
 
   try {
     const { animes, enrichedCount, consolidatedCount } = await enrichCatalog(req.body);

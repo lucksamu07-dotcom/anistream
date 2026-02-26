@@ -1,9 +1,11 @@
 ﻿import { fetchEpisodesDeepByTitle } from "../../../lib/metadataEnricher";
+import { requireAdminAccess } from "../../../lib/adminSecurity";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ message: "Metodo no permitido" });
   }
+  if (!requireAdminAccess(req, res)) return;
 
   const title = req.body?.title;
   if (!title || !String(title).trim()) {

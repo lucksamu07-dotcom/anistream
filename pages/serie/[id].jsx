@@ -13,9 +13,30 @@ function normalizeGenres(genre) {
 }
 
 function getEpisodeNumber(episode) {
-  const text = `${episode?.id || ""} ${episode?.slug || ""} ${episode?.title || ""}`;
-  const match = text.match(/(?:ep|episodio)?\s*0*(\d{1,4})/i);
-  return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+  const text = `${episode?.title || ""} ${episode?.slug || ""} ${episode?.id || ""}`.toLowerCase();
+  const strong =
+    text.match(/(?:episodio|episode|ep|capitulo|cap)\s*[-#:.\s]*0*(\d{1,4})\b/i)?.[1] ||
+    text.match(/(?:^|[^a-z])e\s*0*(\d{1,4})(?:[^a-z]|$)/i)?.[1];
+  if (strong) return Number(strong);
+
+  const numbers = [...text.matchAll(/\b(\d{1,4})\b/g)].map((m) => Number(m[1]));
+  if (numbers.length === 0) return Number.POSITIVE_INFINITY;
+  const last = numbers[numbers.length - 1];
+  if (last >= 1900 && last <= 2100) return Number.POSITIVE_INFINITY;
+  return last;
+}
+
+function compareEpisodes(a, b) {
+  const na = getEpisodeNumber(a);
+  const nb = getEpisodeNumber(b);
+  if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+  if (Number.isFinite(na) && !Number.isFinite(nb)) return -1;
+  if (!Number.isFinite(na) && Number.isFinite(nb)) return 1;
+  return String(a?.title || a?.slug || a?.id || "").localeCompare(
+    String(b?.title || b?.slug || b?.id || ""),
+    "es",
+    { numeric: true, sensitivity: "base" }
+  );
 }
 
 export default function SeriePage() {
@@ -38,7 +59,7 @@ export default function SeriePage() {
 
   const genres = useMemo(() => normalizeGenres(anime?.genre), [anime]);
   const orderedEpisodes = useMemo(
-    () => [...(anime?.episodes || [])].sort((a, b) => getEpisodeNumber(a) - getEpisodeNumber(b)),
+    () => [...(anime?.episodes || [])].sort(compareEpisodes),
     [anime]
   );
 

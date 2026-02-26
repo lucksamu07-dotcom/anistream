@@ -1,6 +1,7 @@
-import { useRouter } from "next/router";
+﻿import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 import Player from "../../components/Player";
+import PlayerErrorBoundary from "../../components/PlayerErrorBoundary";
 
 function normalizeGenres(genre) {
   if (Array.isArray(genre)) return genre.filter(Boolean).map((g) => String(g).trim());
@@ -14,9 +15,58 @@ function normalizeGenres(genre) {
 }
 
 function getEpisodeNumber(episode) {
-  const text = `${episode?.id || ""} ${episode?.slug || ""} ${episode?.title || ""}`;
-  const match = text.match(/(?:ep|episodio)?\s*0*(\d{1,4})/i);
-  return match ? Number(match[1]) : Number.POSITIVE_INFINITY;
+  const text = `${episode?.title || ""} ${episode?.slug || ""} ${episode?.id || ""}`.toLowerCase();
+  const strong =
+    text.match(/(?:episodio|episode|ep|capitulo|cap)\s*[-#:.\s]*0*(\d{1,4})\b/i)?.[1] ||
+    text.match(/(?:^|[^a-z])e\s*0*(\d{1,4})(?:[^a-z]|$)/i)?.[1];
+  if (strong) return Number(strong);
+
+  const numbers = [...text.matchAll(/\b(\d{1,4})\b/g)].map((m) => Number(m[1]));
+  if (numbers.length === 0) return Number.POSITIVE_INFINITY;
+  const last = numbers[numbers.length - 1];
+  if (last >= 1900 && last <= 2100) return Number.POSITIVE_INFINITY;
+  return last;
+}
+
+function compareEpisodes(a, b) {
+  const na = getEpisodeNumber(a);
+  const nb = getEpisodeNumber(b);
+  if (Number.isFinite(na) && Number.isFinite(nb) && na !== nb) return na - nb;
+  if (Number.isFinite(na) && !Number.isFinite(nb)) return -1;
+  if (!Number.isFinite(na) && Number.isFinite(nb)) return 1;
+  return String(a?.title || a?.slug || a?.id || "").localeCompare(
+    String(b?.title || b?.slug || b?.id || ""),
+    "es",
+    { numeric: true, sensitivity: "base" }
+  );
+}
+
+function normalizeText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
+function detectLanguageTag(text) {
+  const value = normalizeText(text);
+  if (!value) return "original";
+  if (/(latino|espanol latino|audio latino|castellano|espanol)/i.test(value)) return "latino";
+  if (/(english|ingles|dub en)/i.test(value)) return "ingles";
+  if (/(sub|subtitulado|sub espanol|japones)/i.test(value)) return "sub";
+  return "original";
+}
+
+function languageLabel(lang) {
+  if (lang === "latino") return "Latino";
+  if (lang === "ingles") return "Ingles";
+  if (lang === "sub") return "Sub";
+  return "Original";
+}
+
+function isBlockedSource(url) {
+  return /hentaistream\./i.test(String(url || ""));
 }
 
 function buildSourceOptions(episode) {
@@ -26,12 +76,22 @@ function buildSourceOptions(episode) {
     return episode.sources
       .map((source, index) => {
         if (typeof source === "string") {
-          return { label: `Servidor ${index + 1}`, url: source };
+          const language = detectLanguageTag(`${source} ${episode.title || ""}`);
+          return {
+            label: `Servidor ${index + 1}`,
+            url: source,
+            language,
+            blocked: isBlockedSource(source),
+          };
         }
         if (source && source.url) {
+          const language =
+            source.language || detectLanguageTag(`${source.label || ""} ${source.url} ${episode.title || ""}`);
           return {
             label: source.label || source.server || `Servidor ${index + 1}`,
             url: source.url,
+            language,
+            blocked: isBlockedSource(source.url),
           };
         }
         return null;
@@ -40,7 +100,14 @@ function buildSourceOptions(episode) {
   }
 
   if (episode.sourceUrl) {
-    return [{ label: "Principal", url: episode.sourceUrl }];
+    return [
+      {
+        label: "Principal",
+        url: episode.sourceUrl,
+        language: episode.language || detectLanguageTag(`${episode.title || ""} ${episode.sourceUrl}`),
+        blocked: isBlockedSource(episode.sourceUrl),
+      },
+    ];
   }
 
   return [];
@@ -55,6 +122,7 @@ export default function VideoPage() {
   const [isFavorite, setIsFavorite] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeSourceUrl, setActiveSourceUrl] = useState("");
+  const [activeLanguage, setActiveLanguage] = useState("");
 
   useEffect(() => {
     if (!slug) return;
@@ -68,7 +136,7 @@ export default function VideoPage() {
       );
       const foundVideo = foundAnime?.episodes.find((ep) => ep.slug === slug);
       const sortedEpisodes = [...(foundAnime?.episodes || [])].sort(
-        (a, b) => getEpisodeNumber(a) - getEpisodeNumber(b)
+        compareEpisodes
       );
       const index = sortedEpisodes.findIndex((ep) => ep.slug === slug);
 
@@ -76,7 +144,14 @@ export default function VideoPage() {
       setVideo(foundVideo);
       setCurrentIndex(index);
       const sources = buildSourceOptions(foundVideo);
-      setActiveSourceUrl(sources[0]?.url || "");
+      const firstPlayable = sources.find((s) => !s.blocked) || sources[0];
+      const initialLanguage = firstPlayable?.language || "original";
+      const initialForLanguage = sources.find((s) => (s.language || "original") === initialLanguage && !s.blocked)
+        || sources.find((s) => (s.language || "original") === initialLanguage)
+        || firstPlayable;
+      setActiveSourceUrl(firstPlayable?.url || "");
+      setActiveLanguage(initialLanguage);
+      if (initialForLanguage?.url) setActiveSourceUrl(initialForLanguage.url);
 
       const savedViews = JSON.parse(localStorage.getItem("animeViews") || "{}");
       const currentViews = savedViews[foundAnime?.id] || 0;
@@ -102,15 +177,24 @@ export default function VideoPage() {
   };
 
   const orderedEpisodes = useMemo(
-    () => [...(anime?.episodes || [])].sort((a, b) => getEpisodeNumber(a) - getEpisodeNumber(b)),
+    () => [...(anime?.episodes || [])].sort(compareEpisodes),
     [anime]
   );
   const genres = useMemo(() => normalizeGenres(anime?.genre), [anime]);
   const sourceOptions = useMemo(() => buildSourceOptions(video), [video]);
+  const languageOptions = useMemo(
+    () => [...new Set(sourceOptions.map((s) => s.language || "original"))],
+    [sourceOptions]
+  );
+  const visibleSources = useMemo(() => {
+    if (!activeLanguage) return sourceOptions;
+    return sourceOptions.filter((s) => (s.language || "original") === activeLanguage);
+  }, [sourceOptions, activeLanguage]);
   const episodeNumber = getEpisodeNumber(video);
   const episodeLabel = Number.isFinite(episodeNumber)
     ? `Episodio ${episodeNumber}`
     : video?.title || "Episodio";
+  const activeUrl = activeSourceUrl || visibleSources[0]?.url || sourceOptions[0]?.url || "";
 
   if (!video || !anime) {
     return (
@@ -151,23 +235,52 @@ export default function VideoPage() {
         </p>
         <p className="mb-4 text-xs text-neutral-500">{views} vistas</p>
 
-        {sourceOptions.length > 1 && (
+        {languageOptions.length > 1 && (
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-neutral-400">Servidor:</span>
-            {sourceOptions.map((source) => {
-              const isActive = activeSourceUrl === source.url;
+            <span className="text-xs text-neutral-400">Idioma:</span>
+            {languageOptions.map((lang) => {
+              const isActive = activeLanguage === lang;
               return (
                 <button
-                  key={`${source.label}-${source.url}`}
+                  key={lang}
                   type="button"
-                  onClick={() => setActiveSourceUrl(source.url)}
+                  onClick={() => {
+                    setActiveLanguage(lang);
+                    const firstSource =
+                      sourceOptions.find((s) => (s.language || "original") === lang && !s.blocked) ||
+                      sourceOptions.find((s) => (s.language || "original") === lang);
+                    if (firstSource?.url) setActiveSourceUrl(firstSource.url);
+                  }}
                   className={`interactive rounded-full border px-3 py-1 text-xs ${
                     isActive
                       ? "border-pink-500 bg-pink-600 text-white"
                       : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-pink-500/50 hover:text-white"
                   }`}
                 >
-                  {source.label}
+                  {languageLabel(lang)}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {visibleSources.length > 1 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-neutral-400">Servidor:</span>
+            {visibleSources.map((source) => {
+              const isActive = activeSourceUrl === source.url;
+              return (
+                <button
+                  key={`${source.label}-${source.url}`}
+                  type="button"
+                  onClick={() => setActiveSourceUrl(source.url)}
+                    className={`interactive rounded-full border px-3 py-1 text-xs ${
+                      isActive
+                        ? "border-pink-500 bg-pink-600 text-white"
+                        : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-pink-500/50 hover:text-white"
+                    }`}
+                  >
+                  {source.label}{source.blocked ? " (externo)" : ""}
                 </button>
               );
             })}
@@ -175,7 +288,13 @@ export default function VideoPage() {
         )}
 
         <div className="mb-6 aspect-video overflow-hidden rounded-xl bg-black shadow-lg shadow-pink-500/10">
-          <Player url={activeSourceUrl || sourceOptions[0]?.url || ""} title={video.title} />
+          <PlayerErrorBoundary resetKey={activeUrl}>
+            <Player
+              key={activeUrl}
+              url={activeUrl}
+              title={video.title}
+            />
+          </PlayerErrorBoundary>
         </div>
 
         <div className="mb-8 flex flex-wrap gap-2 sm:gap-3">
@@ -222,3 +341,4 @@ export default function VideoPage() {
     </div>
   );
 }
+

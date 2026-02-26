@@ -1,14 +1,13 @@
-﻿import fs from "fs";
-import path from "path";
+import { requireAdminAccess } from "../../../lib/adminSecurity";
+import { readCatalog } from "../../../lib/adminStorage";
 
 export default function handler(req, res) {
-  const filePath = path.join(process.cwd(), "data", "videos.json");
+  if (!requireAdminAccess(req, res)) return;
 
   try {
-    const data = fs.readFileSync(filePath, "utf-8");
-    const jsonData = JSON.parse(data);
-    res.status(200).json(jsonData);
-  } catch (error) {
-    res.status(500).json({ message: "Error al leer los datos" });
+    return res.status(200).json(readCatalog());
+  } catch {
+    return res.status(500).json({ message: "Error al leer los datos" });
   }
 }
+
