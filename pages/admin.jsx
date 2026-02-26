@@ -58,38 +58,28 @@ export default function Admin() {
   const [editingEpisode, setEditingEpisode] = useState(null);
 
   useEffect(() => {
-    let active = true;
+    const isLoggedIn =
+      typeof window !== "undefined" && localStorage.getItem("loggedIn");
+    if (isLoggedIn !== "true") router.push("/login");
+  }, [router]);
 
+  useEffect(() => {
     const load = async () => {
       try {
-        const authRes = await fetch("/api/admin/me");
-        if (!authRes.ok) {
-          router.push("/login");
-          return;
-        }
-
         const res = await fetch("/api/mock/read");
-        if (res.status === 401) {
-          router.push("/login");
-          return;
-        }
         if (!res.ok) throw new Error("Error al cargar los datos");
-
         const json = await res.json();
-        if (active) setAnimes(Array.isArray(json) ? json : []);
+        setAnimes(Array.isArray(json) ? json : []);
       } catch (err) {
         console.error(err);
-        if (active) setError("Error cargando datos");
+        setError("Error cargando datos");
       } finally {
-        if (active) setLoading(false);
+        setLoading(false);
       }
     };
 
     load();
-    return () => {
-      active = false;
-    };
-  }, [router]);
+  }, []);
 
   const handleLookupByName = async () => {
     if (!newAnime.title.trim()) {
@@ -385,12 +375,9 @@ export default function Admin() {
     }
   };
 
-  const handleLogout = async () => {
-    try {
-      await fetch("/api/admin/logout", { method: "POST" });
-    } finally {
-      router.push("/login");
-    }
+  const handleLogout = () => {
+    localStorage.removeItem("loggedIn");
+    router.push("/login");
   };
 
   const syncStreamtape = async () => {
@@ -766,18 +753,4 @@ export default function Admin() {
       `}</style>
     </div>
   );
-}
-
-export async function getServerSideProps(context) {
-  const { isAdminRequest } = await import("../lib/adminAuth");
-  if (!isAdminRequest(context.req)) {
-    return {
-      redirect: {
-        destination: "/login",
-        permanent: false,
-      },
-    };
-  }
-
-  return { props: {} };
 }

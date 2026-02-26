@@ -1,5 +1,4 @@
-// Simula una base de datos (leer datos)
-import fs from "fs";
+﻿import fs from "fs";
 import path from "path";
 
 export default function handler(req, res) {

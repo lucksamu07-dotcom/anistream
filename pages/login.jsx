@@ -6,43 +6,24 @@ export default function Login() {
   const [user, setUser] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const check = async () => {
-      try {
-        const res = await fetch("/api/admin/me");
-        if (res.ok) router.push("/admin");
-      } catch {
-        // no-op
-      }
-    };
-    check();
+    if (localStorage.getItem("loggedIn") === "true") {
+      router.push("/admin");
+    }
   }, [router]);
 
-  const handleLogin = async (e) => {
+  const handleLogin = (e) => {
     e.preventDefault();
-    setError("");
-    setLoading(true);
 
-    try {
-      const res = await fetch("/api/admin/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user, password }),
-      });
-      const data = await res.json();
+    const USER = "admin2025";
+    const PASS = "anistream959123";
 
-      if (!res.ok) {
-        setError(data?.message || "No se pudo iniciar sesion");
-        return;
-      }
-
+    if (user === USER && password === PASS) {
+      localStorage.setItem("loggedIn", "true");
       router.push("/admin");
-    } catch {
-      setError("Error de red al iniciar sesion");
-    } finally {
-      setLoading(false);
+    } else {
+      setError("Usuario o contrasena incorrectos");
     }
   };
 
@@ -69,8 +50,8 @@ export default function Login() {
 
           {error && <p className="text-red-400 text-sm text-center">{error}</p>}
 
-          <button type="submit" className="btn bg-pink-600 hover:bg-pink-700 mt-2" disabled={loading}>
-            {loading ? "Entrando..." : "Iniciar sesion"}
+          <button type="submit" className="btn bg-pink-600 hover:bg-pink-700 mt-2">
+            Iniciar sesion
           </button>
         </form>
       </div>

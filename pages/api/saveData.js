@@ -1,14 +1,10 @@
 ﻿import fs from "fs";
 import path from "path";
-import { requireAdminApi } from "../../lib/adminAuth";
 
 export default function handler(req, res) {
-  if (!requireAdminApi(req, res)) return;
-
   if (req.method !== "POST") {
     return res.status(405).json({ message: "Metodo no permitido" });
   }
-
   try {
     const filePath = path.join(process.cwd(), "data", "videos.json");
     const body = Array.isArray(req.body) ? req.body : [];

@@ -1,6 +1,5 @@
 ﻿import fs from "fs";
 import path from "path";
-import { requireAdminApi } from "../../../lib/adminAuth";
 
 function normalizeCatalog(input) {
   if (!Array.isArray(input)) return [];
@@ -36,8 +35,6 @@ function normalizeCatalog(input) {
 }
 
 export default async function handler(req, res) {
-  if (!requireAdminApi(req, res)) return;
-
   if (req.method !== "POST") {
     return res.status(405).json({ message: "Metodo no permitido" });
   }
