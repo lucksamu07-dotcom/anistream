@@ -8,6 +8,14 @@ const BLOCKED_API_PATHS = new Set([
   "/api/mock/enrich-episodes",
   "/api/mock/enrich-preview",
   "/api/mock/repair-episode-urls",
+  "/api/mock/discover-new",
+  "/api/mock/discover-auto-import",
+  "/api/mock/add-discovered",
+  "/api/mock/admin-dashboard",
+  "/api/mock/admin-search",
+  "/api/mock/admin-validate-urls",
+  "/api/mock/admin-audit",
+  "/api/mock/admin-snapshots",
   "/api/saveData",
   "/api/syncStreamtape",
 ]);
@@ -18,7 +26,9 @@ function getHostWithoutPort(hostHeader = "") {
 
 function isLocalRequest(req) {
   const host = getHostWithoutPort(req.headers.get("host"));
-  return LOCAL_HOSTS.has(host);
+  const forwardedHost = getHostWithoutPort(req.headers.get("x-forwarded-host"));
+  const urlHost = getHostWithoutPort(req.nextUrl?.hostname || "");
+  return LOCAL_HOSTS.has(host) || LOCAL_HOSTS.has(forwardedHost) || LOCAL_HOSTS.has(urlHost);
 }
 
 export function middleware(req) {

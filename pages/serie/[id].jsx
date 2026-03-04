@@ -1,5 +1,6 @@
 ﻿import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
+import { getEpisodePreviewUrl, getEpisodeThumbnail } from "../../lib/videoPreview";
 
 function normalizeGenres(genre) {
   if (Array.isArray(genre)) return genre.filter(Boolean).map((g) => String(g).trim());
@@ -43,6 +44,7 @@ export default function SeriePage() {
   const router = useRouter();
   const { id } = router.query;
   const [anime, setAnime] = useState(null);
+  const [hoveredEpisodeSlug, setHoveredEpisodeSlug] = useState("");
 
   useEffect(() => {
     if (!id) return;
@@ -123,19 +125,37 @@ export default function SeriePage() {
           {orderedEpisodes.map((ep) => {
             const number = getEpisodeNumber(ep);
             const label = Number.isFinite(number) ? `Episodio ${number}` : ep.title;
+            const thumb = getEpisodeThumbnail(ep, anime.cover);
+            const previewUrl = getEpisodePreviewUrl(ep);
+            const showPreview = hoveredEpisodeSlug === ep.slug && !!previewUrl;
 
             return (
               <div
                 key={ep.slug}
-                className="cursor-pointer rounded-lg border border-transparent bg-neutral-900/70 p-3 transition-all hover:border-pink-500/40 hover:bg-neutral-800/80"
+                className="group cursor-pointer rounded-lg border border-transparent bg-neutral-900/70 p-3 transition-all hover:border-pink-500/40 hover:bg-neutral-800/80"
                 onClick={() => router.push(`/video/${ep.slug}`)}
+                onMouseEnter={() => setHoveredEpisodeSlug(ep.slug)}
+                onMouseLeave={() => setHoveredEpisodeSlug("")}
               >
-                <div className="mb-2 aspect-video overflow-hidden rounded-md bg-black shadow-md">
+                <div className="relative mb-2 aspect-video overflow-hidden rounded-md bg-black shadow-md">
                   <img
-                    src={ep.thumbnail || anime.cover}
+                    src={thumb}
                     alt={ep.title}
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    className={`h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 ${
+                      showPreview ? "opacity-0" : "opacity-100"
+                    }`}
                   />
+                  {showPreview && (
+                    <video
+                      src={previewUrl}
+                      muted
+                      autoPlay
+                      loop
+                      playsInline
+                      preload="metadata"
+                      className="absolute inset-0 h-full w-full object-cover"
+                    />
+                  )}
                 </div>
 
                 <h3 className="truncate text-sm font-semibold text-neutral-100">{label}</h3>

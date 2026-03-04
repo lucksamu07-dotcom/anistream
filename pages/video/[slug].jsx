@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Player from "../../components/Player";
 import PlayerErrorBoundary from "../../components/PlayerErrorBoundary";
+import { getEpisodeThumbnail } from "../../lib/videoPreview";
 
 function normalizeGenres(genre) {
   if (Array.isArray(genre)) return genre.filter(Boolean).map((g) => String(g).trim());
@@ -274,12 +275,12 @@ export default function VideoPage() {
                   key={`${source.label}-${source.url}`}
                   type="button"
                   onClick={() => setActiveSourceUrl(source.url)}
-                    className={`interactive rounded-full border px-3 py-1 text-xs ${
-                      isActive
-                        ? "border-pink-500 bg-pink-600 text-white"
-                        : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-pink-500/50 hover:text-white"
-                    }`}
-                  >
+                  className={`interactive rounded-full border px-3 py-1 text-xs ${
+                    isActive
+                      ? "border-pink-500 bg-pink-600 text-white"
+                      : "border-white/15 bg-neutral-900 text-neutral-300 hover:border-pink-500/50 hover:text-white"
+                  }`}
+                >
                   {source.label}{source.blocked ? " (externo)" : ""}
                 </button>
               );
@@ -330,15 +331,46 @@ export default function VideoPage() {
         </p>
       </div>
 
-      <aside className="w-full border-t border-white/10 bg-neutral-900/40 p-4 sm:p-6 md:w-80 md:border-l md:border-t-0">
-        <h2 className="mb-2 text-center text-lg font-semibold md:text-left">
-          Animes recomendados
-        </h2>
-        <p className="text-center text-sm text-neutral-500 md:text-left">
-          Proximamente.
-        </p>
+      <aside className="w-full border-t border-white/10 bg-neutral-900/40 p-4 sm:p-6 md:w-80 md:border-l md:border-t-0 lg:w-96">
+        <p className="text-xs text-neutral-400">Estas viendo</p>
+        <h2 className="mb-4 text-xl font-semibold text-white">{episodeLabel}</h2>
+
+        <div className="max-h-[65vh] space-y-2 overflow-y-auto pr-1">
+          {orderedEpisodes.map((ep) => {
+            const num = getEpisodeNumber(ep);
+            const label = Number.isFinite(num) ? `Episodio ${num}` : ep.title || "Episodio";
+            const active = ep.slug === slug;
+            const thumb = getEpisodeThumbnail(ep, anime.cover);
+
+            return (
+              <button
+                key={ep.slug}
+                type="button"
+                onClick={() => router.push(`/video/${ep.slug}`)}
+                className={`w-full rounded-xl border p-2 text-left transition ${
+                  active
+                    ? "border-pink-400 bg-pink-500/10"
+                    : "border-white/10 bg-white/5 hover:border-pink-500/40 hover:bg-white/10"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <img
+                    src={thumb}
+                    alt={ep.title || label}
+                    className="h-14 w-20 rounded-md object-cover"
+                  />
+                  <div className="min-w-0">
+                    <p className={`truncate text-base font-semibold ${active ? "text-pink-300" : "text-white"}`}>
+                      {label}
+                    </p>
+                    <p className="truncate text-sm text-neutral-400">{anime.title}</p>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       </aside>
     </div>
   );
 }
-
