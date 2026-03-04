@@ -40,20 +40,49 @@ function compareEpisodes(a, b) {
   );
 }
 
+async function fetchCatalog() {
+  const endpoints = ["/api/getData", "/api/mock/read"];
+
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+    } catch {
+      // try next endpoint
+    }
+  }
+
+  throw new Error("No se pudo cargar el catalogo");
+}
+
 export default function SeriePage() {
   const router = useRouter();
   const { id } = router.query;
   const [anime, setAnime] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [hoveredEpisodeSlug, setHoveredEpisodeSlug] = useState("");
 
   useEffect(() => {
     if (!id) return;
 
     const load = async () => {
-      const res = await fetch("/api/mock/read");
-      const data = await res.json();
-      const found = data.find((a) => a.id === id);
-      setAnime(found);
+      setIsLoading(true);
+      setLoadError("");
+
+      try {
+        const data = await fetchCatalog();
+        const found = data.find((a) => a.id === id);
+        setAnime(found || null);
+        if (!found) setLoadError("No se encontro esta serie.");
+      } catch {
+        setAnime(null);
+        setLoadError("No se pudieron cargar los datos.");
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     load();
@@ -65,10 +94,18 @@ export default function SeriePage() {
     [anime]
   );
 
-  if (!anime) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-neutral-950 text-white flex items-center justify-center">
         Cargando serie...
+      </div>
+    );
+  }
+
+  if (!anime) {
+    return (
+      <div className="min-h-screen bg-neutral-950 text-white flex items-center justify-center px-4 text-center">
+        {loadError || "Serie no disponible."}
       </div>
     );
   }

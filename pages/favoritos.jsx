@@ -1,6 +1,23 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 
+async function fetchCatalog() {
+  const endpoints = ["/api/getData", "/api/mock/read"];
+
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+    } catch {
+      // try next endpoint
+    }
+  }
+
+  return [];
+}
+
 export default function FavoritosPage() {
   const [favorites, setFavorites] = useState([]);
   const [allAnimes, setAllAnimes] = useState([]);
@@ -11,8 +28,7 @@ export default function FavoritosPage() {
     setFavorites(favs);
 
     const load = async () => {
-      const res = await fetch("/api/mock/read");
-      const data = await res.json();
+      const data = await fetchCatalog();
       setAllAnimes(data);
     };
     load();

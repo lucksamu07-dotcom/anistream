@@ -114,6 +114,23 @@ function buildSourceOptions(episode) {
   return [];
 }
 
+async function fetchCatalog() {
+  const endpoints = ["/api/getData", "/api/mock/read"];
+
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(endpoint);
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (Array.isArray(data)) return data;
+    } catch {
+      // try next endpoint
+    }
+  }
+
+  throw new Error("No se pudo cargar el catalogo");
+}
+
 export default function VideoPage() {
   const router = useRouter();
   const { slug } = router.query;
@@ -124,44 +141,63 @@ export default function VideoPage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [activeSourceUrl, setActiveSourceUrl] = useState("");
   const [activeLanguage, setActiveLanguage] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
     if (!slug) return;
 
     const load = async () => {
-      const res = await fetch("/api/mock/read");
-      const data = await res.json();
+      setIsLoading(true);
+      setLoadError("");
 
-      const foundAnime = data.find((a) =>
-        a.episodes.some((ep) => ep.slug === slug)
-      );
-      const foundVideo = foundAnime?.episodes.find((ep) => ep.slug === slug);
-      const sortedEpisodes = [...(foundAnime?.episodes || [])].sort(
-        compareEpisodes
-      );
-      const index = sortedEpisodes.findIndex((ep) => ep.slug === slug);
+      try {
+        const data = await fetchCatalog();
+        const foundAnime = data.find((a) =>
+          a.episodes.some((ep) => ep.slug === slug)
+        );
+        const foundVideo = foundAnime?.episodes.find((ep) => ep.slug === slug);
 
-      setAnime(foundAnime);
-      setVideo(foundVideo);
-      setCurrentIndex(index);
-      const sources = buildSourceOptions(foundVideo);
-      const firstPlayable = sources.find((s) => !s.blocked) || sources[0];
-      const initialLanguage = firstPlayable?.language || "original";
-      const initialForLanguage = sources.find((s) => (s.language || "original") === initialLanguage && !s.blocked)
-        || sources.find((s) => (s.language || "original") === initialLanguage)
-        || firstPlayable;
-      setActiveSourceUrl(firstPlayable?.url || "");
-      setActiveLanguage(initialLanguage);
-      if (initialForLanguage?.url) setActiveSourceUrl(initialForLanguage.url);
+        if (!foundAnime || !foundVideo) {
+          setAnime(null);
+          setVideo(null);
+          setLoadError("No se encontro este episodio.");
+          return;
+        }
 
-      const savedViews = JSON.parse(localStorage.getItem("animeViews") || "{}");
-      const currentViews = savedViews[foundAnime?.id] || 0;
-      savedViews[foundAnime?.id] = currentViews + 1;
-      localStorage.setItem("animeViews", JSON.stringify(savedViews));
-      setViews(currentViews + 1);
+        const sortedEpisodes = [...(foundAnime?.episodes || [])].sort(
+          compareEpisodes
+        );
+        const index = sortedEpisodes.findIndex((ep) => ep.slug === slug);
 
-      const savedFavs = JSON.parse(localStorage.getItem("animeFavorites") || "[]");
-      setIsFavorite(savedFavs.includes(foundAnime?.id));
+        setAnime(foundAnime);
+        setVideo(foundVideo);
+        setCurrentIndex(index);
+        const sources = buildSourceOptions(foundVideo);
+        const firstPlayable = sources.find((s) => !s.blocked) || sources[0];
+        const initialLanguage = firstPlayable?.language || "original";
+        const initialForLanguage = sources.find((s) => (s.language || "original") === initialLanguage && !s.blocked)
+          || sources.find((s) => (s.language || "original") === initialLanguage)
+          || firstPlayable;
+        setActiveSourceUrl(firstPlayable?.url || "");
+        setActiveLanguage(initialLanguage);
+        if (initialForLanguage?.url) setActiveSourceUrl(initialForLanguage.url);
+
+        const savedViews = JSON.parse(localStorage.getItem("animeViews") || "{}");
+        const currentViews = savedViews[foundAnime?.id] || 0;
+        savedViews[foundAnime?.id] = currentViews + 1;
+        localStorage.setItem("animeViews", JSON.stringify(savedViews));
+        setViews(currentViews + 1);
+
+        const savedFavs = JSON.parse(localStorage.getItem("animeFavorites") || "[]");
+        setIsFavorite(savedFavs.includes(foundAnime?.id));
+      } catch {
+        setAnime(null);
+        setVideo(null);
+        setLoadError("No se pudieron cargar los datos.");
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     load();
@@ -197,10 +233,18 @@ export default function VideoPage() {
     : video?.title || "Episodio";
   const activeUrl = activeSourceUrl || visibleSources[0]?.url || sourceOptions[0]?.url || "";
 
-  if (!video || !anime) {
+  if (isLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-950 text-white">
         Cargando episodio...
+      </div>
+    );
+  }
+
+  if (!video || !anime) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-neutral-950 px-4 text-center text-white">
+        {loadError || "Episodio no disponible."}
       </div>
     );
   }
