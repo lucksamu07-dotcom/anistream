@@ -1,0 +1,156 @@
+[
+  {
+    "id": "audit-1772137688915",
+    "createdAt": "2026-02-26T20:28:08.915Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (1 series)",
+    "snapshot": "2026-02-26T20-28-08-913Z-before-write.json"
+  },
+  {
+    "id": "audit-1772138880398",
+    "createdAt": "2026-02-26T20:48:00.398Z",
+    "action": "catalog.rollback",
+    "detail": "Rollback aplicado desde 2026-02-26T20-28-08-913Z-before-write.json",
+    "snapshot": "2026-02-26T20-28-08-913Z-before-write.json"
+  },
+  {
+    "id": "audit-1772138886668",
+    "createdAt": "2026-02-26T20:48:06.668Z",
+    "action": "catalog.rollback",
+    "detail": "Rollback aplicado desde 2026-02-26T20-48-00-394Z-before-rollback.json",
+    "snapshot": "2026-02-26T20-48-00-394Z-before-rollback.json"
+  },
+  {
+    "id": "audit-1772138894257",
+    "createdAt": "2026-02-26T20:48:14.257Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (0 series)",
+    "snapshot": "2026-02-26T20-48-14-254Z-before-write.json"
+  },
+  {
+    "id": "audit-1772138969233",
+    "createdAt": "2026-02-26T20:49:29.233Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (1 series)",
+    "snapshot": "2026-02-26T20-49-29-231Z-before-write.json"
+  },
+  {
+    "id": "audit-1772139111229",
+    "createdAt": "2026-02-26T20:51:51.229Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (2 series)",
+    "snapshot": "2026-02-26T20-51-51-226Z-before-write.json"
+  },
+  {
+    "id": "audit-1772139168969",
+    "createdAt": "2026-02-26T20:52:48.969Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (3 series)",
+    "snapshot": "2026-02-26T20-52-48-968Z-before-write.json"
+  },
+  {
+    "id": "audit-1772139171310",
+    "createdAt": "2026-02-26T20:52:51.310Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (3 series)",
+    "snapshot": "2026-02-26T20-52-51-308Z-before-write.json"
+  },
+  {
+    "id": "audit-1772139202456",
+    "createdAt": "2026-02-26T20:53:22.456Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (4 series)",
+    "snapshot": "2026-02-26T20-53-22-454Z-before-write.json"
+  },
+  {
+    "id": "audit-1772139247352",
+    "createdAt": "2026-02-26T20:54:07.352Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (5 series)",
+    "snapshot": "2026-02-26T20-54-07-350Z-before-write.json"
+  },
+  {
+    "id": "audit-1772139265724",
+    "createdAt": "2026-02-26T20:54:25.724Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (6 series)",
+    "snapshot": "2026-02-26T20-54-25-723Z-before-write.json"
+  },
+  {
+    "id": "audit-1772139341043",
+    "createdAt": "2026-02-26T20:55:41.043Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (6 series)",
+    "snapshot": "2026-02-26T20-55-41-042Z-before-write.json"
+  },
+  {
+    "id": "audit-1772140115755",
+    "createdAt": "2026-02-26T21:08:35.755Z",
+    "action": "catalog.auto-import",
+    "detail": "Auto import: +20 nuevos, 0 actualizados, 2 omitidos",
+    "snapshot": "2026-02-26T21-08-35-744Z-before-auto-import-20.json"
+  },
+  {
+    "id": "audit-1772140138338",
+    "createdAt": "2026-02-26T21:08:58.338Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (26 series)",
+    "snapshot": "2026-02-26T21-08-58-335Z-before-write.json"
+  },
+  {
+    "id": "audit-1772141379583",
+    "createdAt": "2026-02-26T21:29:39.583Z",
+    "action": "catalog.auto-import",
+    "detail": "Auto import: +20 nuevos, 0 actualizados, 3 omitidos",
+    "snapshot": "2026-02-26T21-29-39-568Z-before-auto-import-20.json"
+  },
+  {
+    "id": "audit-1772141411825",
+    "createdAt": "2026-02-26T21:30:11.825Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (46 series)",
+    "snapshot": "2026-02-26T21-30-11-817Z-before-write.json"
+  },
+  {
+    "id": "audit-1772141415803",
+    "createdAt": "2026-02-26T21:30:15.803Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (46 series)",
+    "snapshot": "2026-02-26T21-30-15-798Z-before-write.json"
+  },
+  {
+    "id": "audit-1772143744979",
+    "createdAt": "2026-02-26T22:09:04.979Z",
+    "action": "catalog.auto-import",
+    "detail": "Auto import: +11 nuevos, 1 actualizados, 9 omitidos",
+    "snapshot": "2026-02-26T22-09-04-958Z-before-auto-import-20.json"
+  },
+  {
+    "id": "audit-1772143789808",
+    "createdAt": "2026-02-26T22:09:49.808Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (57 series)",
+    "snapshot": "2026-02-26T22-09-49-804Z-before-write.json"
+  },
+  {
+    "id": "audit-1772143894361",
+    "createdAt": "2026-02-26T22:11:34.361Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (57 series)",
+    "snapshot": "2026-02-26T22-11-34-354Z-before-write.json"
+  },
+  {
+    "id": "audit-1772143967285",
+    "createdAt": "2026-02-26T22:12:47.285Z",
+    "action": "catalog.auto-import",
+    "detail": "Auto import: +0 nuevos, 1 actualizados, 9 omitidos",
+    "snapshot": "2026-02-26T22-12-47-240Z-before-auto-import-20.json"
+  },
+  {
+    "id": "audit-1772143984622",
+    "createdAt": "2026-02-26T22:13:04.622Z",
+    "action": "catalog.write",
+    "detail": "Catalogo guardado (57 series)",
+    "snapshot": "2026-02-26T22-13-04-617Z-before-write.json"
+  }
+]

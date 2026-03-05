@@ -1,0 +1,102 @@
+@import url("https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Manrope:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --ease-fluid: cubic-bezier(0.22, 1, 0.36, 1);
+  --duration-fast: 180ms;
+  --duration-base: 320ms;
+  --font-display: "Bebas Neue", "Segoe UI", sans-serif;
+  --font-ui: "Manrope", "Segoe UI", sans-serif;
+  --bg-1: #090606;
+  --bg-2: #13090a;
+  --ink: #f5efef;
+  --muted: #a79797;
+  --accent: #ff4c64;
+  --accent-2: #ff7d5c;
+  --plyr-color-main: #ff4c64;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#__next {
+  height: 100%;
+}
+
+html,
+body {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  background:
+    radial-gradient(1000px 500px at 8% -5%, rgba(255, 76, 100, 0.25), transparent 55%),
+    radial-gradient(900px 450px at 92% 0%, rgba(255, 125, 92, 0.15), transparent 60%),
+    linear-gradient(180deg, var(--bg-2), var(--bg-1) 40%, #050404 100%);
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+.fluid-enter {
+  animation: fluidEnter var(--duration-base) var(--ease-fluid) both;
+}
+
+@keyframes fluidEnter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.interactive {
+  transition:
+    transform var(--duration-base) var(--ease-fluid),
+    box-shadow var(--duration-fast) ease-out,
+    background-color var(--duration-fast) ease-out,
+    border-color var(--duration-fast) ease-out,
+    color var(--duration-fast) ease-out,
+    opacity var(--duration-fast) ease-out;
+}
+
+.glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+}
+
+.title-display {
+  font-family: var(--font-display);
+  letter-spacing: 0.03em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html,
+  body {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
