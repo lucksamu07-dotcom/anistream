@@ -131,6 +131,7 @@ export default function Navbar() {
     if (typeof window !== "undefined") {
       sessionStorage.setItem("anistream:open-filters", "1");
     }
+    window.dispatchEvent(new CustomEvent("anistream:force-catalog-open"));
     if (router.pathname !== "/") {
       router.push("/#catalogo");
       return;

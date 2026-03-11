@@ -91,8 +91,24 @@ export default function Home() {
       scrollToCatalog();
     };
 
+    const onForceCatalog = () => {
+      window.dispatchEvent(new CustomEvent("anistream:search-suppress"));
+      setShowFilters(true);
+      scrollToCatalog();
+    };
+
+    const onHashChange = () => {
+      if (window.location.hash === "#catalogo") {
+        window.dispatchEvent(new CustomEvent("anistream:search-suppress"));
+        setShowFilters(true);
+        scrollToCatalog();
+      }
+    };
+
     window.addEventListener("anistream:set-search", onSetSearch);
     window.addEventListener("anistream:toggle-filters", onToggleFilters);
+    window.addEventListener("anistream:force-catalog-open", onForceCatalog);
+    window.addEventListener("hashchange", onHashChange);
     const shouldOpen = sessionStorage.getItem("anistream:open-filters");
     if (shouldOpen) {
       setShowFilters(true);
@@ -104,6 +120,8 @@ export default function Home() {
     return () => {
       window.removeEventListener("anistream:set-search", onSetSearch);
       window.removeEventListener("anistream:toggle-filters", onToggleFilters);
+      window.removeEventListener("anistream:force-catalog-open", onForceCatalog);
+      window.removeEventListener("hashchange", onHashChange);
     };
   }, []);
 
