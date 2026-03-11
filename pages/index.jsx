@@ -1,7 +1,9 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import data from "../data/videos.json";
+import { trackEvent } from "../lib/analytics";
 
 const LETTER_FILTERS = ["#", ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("")];
 const HERO_LIMIT = 10;
@@ -36,6 +38,7 @@ function shortText(text, max = 140) {
 }
 
 export default function Home() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
   const [activeCard, setActiveCard] = useState(null);
   const [genrePickerOpen, setGenrePickerOpen] = useState(false);
@@ -67,6 +70,69 @@ export default function Home() {
     return () => clearInterval(timer);
   }, [heroAnimes]);
 
+  useEffect(() => {
+    const onSetSearch = (event) => {
+      const term = String(event?.detail?.term || "");
+      setSearchTerm(term);
+    };
+
+    const scrollToCatalog = () => {
+      const catalog = document.getElementById("catalogo");
+      if (!catalog) return;
+      const top = catalog.getBoundingClientRect().top + window.scrollY - 90;
+      window.scrollTo({ top, behavior: "smooth" });
+    };
+
+    const onToggleFilters = (event) => {
+      window.dispatchEvent(new CustomEvent("anistream:search-suppress"));
+      const forced = event?.detail?.open;
+      if (typeof forced === "boolean") setShowFilters(forced);
+      else setShowFilters((prev) => !prev);
+      scrollToCatalog();
+    };
+
+    window.addEventListener("anistream:set-search", onSetSearch);
+    window.addEventListener("anistream:toggle-filters", onToggleFilters);
+    const shouldOpen = sessionStorage.getItem("anistream:open-filters");
+    if (shouldOpen) {
+      setShowFilters(true);
+      window.dispatchEvent(new CustomEvent("anistream:search-suppress"));
+      setTimeout(scrollToCatalog, 0);
+      sessionStorage.removeItem("anistream:open-filters");
+    }
+
+    return () => {
+      window.removeEventListener("anistream:set-search", onSetSearch);
+      window.removeEventListener("anistream:toggle-filters", onToggleFilters);
+    };
+  }, []);
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("anistream:sync-search", {
+        detail: { term: searchTerm },
+      })
+    );
+  }, [searchTerm]);
+
+  useEffect(() => {
+    if (searchTerm.trim() && !showFilters) {
+      window.dispatchEvent(new CustomEvent("anistream:search-release"));
+    }
+  }, [searchTerm, showFilters]);
+
+  useEffect(() => {
+    if (showFilters) {
+      window.dispatchEvent(new CustomEvent("anistream:filters-opened"));
+    }
+  }, [showFilters]);
+
+  useEffect(() => {
+    const hideSearch = () => window.dispatchEvent(new CustomEvent("anistream:search-suppress"));
+    window.addEventListener("anistream:filters-opened", hideSearch);
+    return () => window.removeEventListener("anistream:filters-opened", hideSearch);
+  }, []);
+
   const availableGenres = useMemo(() => {
     const map = new Map();
     for (const anime of orderedAnimes) {
@@ -86,7 +152,7 @@ export default function Home() {
         .map((anime) => String(anime?.year || "").trim())
         .filter(Boolean)
     );
-    return [...unique].sort((a, b) => Number(b) - Number(a));
+    return [...unique].sort((a, b) => Number(a) - Number(b));
   }, [orderedAnimes]);
 
   const visibleGenreOptions = useMemo(() => {
@@ -138,6 +204,14 @@ export default function Home() {
   };
 
   const applyFilters = () => {
+    if (draftGenres.length === 1 && !draftInitial && !draftYear && !searchTerm.trim()) {
+      const target = availableGenres.find((g) => g.key === draftGenres[0]);
+      if (target?.label) {
+        router.push(`/categoria/${encodeURIComponent(target.label)}`);
+        setShowFilters(false);
+        return;
+      }
+    }
     setActiveInitial(draftInitial);
     setActiveYear(draftYear);
     setActiveGenres(draftGenres);
@@ -157,7 +231,8 @@ export default function Home() {
 
   const handleCardClick = (animeId) => {
     if (activeCard === animeId) {
-      window.location.href = `/serie/${animeId}`;
+      trackEvent("open_series", { animeId, source: "home_grid" });
+      router.push(`/serie/${animeId}`);
       return;
     }
     setActiveCard(animeId);
@@ -203,33 +278,23 @@ export default function Home() {
     <>
       <Head>
         <title>AniStream+</title>
+        <meta name="description" content="Catalogo de hentai online con series, episodios y buscador rapido." />
+        <meta property="og:title" content="AniStream+ | Catalogo" />
+        <meta property="og:description" content="Explora series y episodios en AniStream+." />
       </Head>
 
-      <main className="mx-auto max-w-7xl px-3 py-4 text-white sm:px-4 sm:py-8" id="catalogo">
-        <section className="sticky top-[64px] z-30 mb-4 mr-auto w-full max-w-3xl rounded-2xl glass p-2.5 sm:top-[68px] sm:mb-6 sm:p-4">
-          <div className="flex items-center gap-2">
-            <div className="flex flex-1 items-center gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5">
-              <svg viewBox="0 0 24 24" className="h-4 w-4 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="7" />
-                <path d="M20 20l-3-3" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Buscar hentai por titulo, genero o ano..."
-                className="w-full bg-transparent text-sm outline-none placeholder:text-neutral-500 sm:text-base"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
+      <main className="mx-auto max-w-7xl px-3 py-3 text-white sm:px-4 sm:py-6" id="catalogo">
+        <div className="mb-3 md:hidden">
+          <button
+            type="button"
+            onClick={() => setShowFilters((prev) => !prev)}
+            className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-sm font-medium hover:bg-white/20"
+          >
+            Filtros
+          </button>
+        </div>
 
-            <button
-              type="button"
-              onClick={() => setShowFilters((prev) => !prev)}
-              className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-sm font-medium hover:bg-white/20"
-            >
-              Filtros
-            </button>
-          </div>
+        <section className={`relative z-30 mb-4 mr-auto w-full max-w-3xl rounded-2xl glass p-2.5 sm:mb-5 sm:p-4 ${showFilters ? "block" : "hidden"} ${genrePickerOpen ? "mb-8" : ""}`}>
 
           {showFilters && (
             <div className="mt-4 rounded-xl border border-white/10 bg-black/25 p-4">
@@ -252,7 +317,7 @@ export default function Home() {
               </div>
 
               <div className="grid gap-3 md:grid-cols-4">
-                <div className="relative md:col-span-2">
+                <div className="md:col-span-2">
                   <button
                     type="button"
                     onClick={() => setGenrePickerOpen((prev) => !prev)}
@@ -265,7 +330,7 @@ export default function Home() {
                   </button>
 
                   {genrePickerOpen && (
-                    <div className="absolute z-30 mt-2 w-full rounded-xl border border-white/10 bg-[#161112] p-3 shadow-2xl">
+                    <div className="mt-2 w-full rounded-xl border border-white/10 bg-[#161112] p-3 shadow-2xl">
                       <input
                         type="text"
                         value={genreSearch}
@@ -298,7 +363,7 @@ export default function Home() {
                 <select
                   value={draftYear}
                   onChange={(e) => setDraftYear(e.target.value)}
-                  className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm outline-none"
+                  className="rounded-lg border border-white/10 bg-[#141112] px-3 py-2 text-xs text-neutral-100 outline-none"
                 >
                   <option value="">Ano: Seleccionar</option>
                   {availableYears.map((year) => (
@@ -311,7 +376,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={applyFilters}
-                  className="rounded-xl bg-gradient-to-r from-rose-500 to-orange-500 px-4 py-3 text-sm font-semibold text-white hover:opacity-90"
+                  className="rounded-lg bg-gradient-to-r from-rose-500 to-orange-500 px-3 py-2 text-xs font-semibold text-white hover:opacity-90"
                 >
                   Aplicar
                 </button>
@@ -332,7 +397,7 @@ export default function Home() {
 
         {activeHero && (
           <section
-            className="relative mb-6 overflow-hidden rounded-2xl border border-white/10"
+            className="relative mb-5 overflow-hidden rounded-2xl border border-white/10"
             onTouchStart={onHeroTouchStart}
             onTouchMove={onHeroTouchMove}
             onTouchEnd={onHeroTouchEnd}
@@ -341,7 +406,7 @@ export default function Home() {
               className="h-[300px] bg-cover bg-center sm:h-[420px] md:h-[500px]"
               style={{ backgroundImage: `url(${activeHero.cover})` }}
             />
-            <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/65 to-black/25" />
+            <div className="absolute inset-0 bg-gradient-to-r from-black/92 via-black/58 to-black/18" />
             <div className="absolute inset-0 bg-gradient-to-t from-[#0a0607]/95 via-transparent to-transparent" />
 
             <div className="absolute left-4 top-4 right-4 flex items-center justify-between gap-3 sm:left-8 sm:right-8">
@@ -352,14 +417,14 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={prevHero}
-                  className="interactive min-h-[42px] rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm hover:bg-white/20"
+                  className="interactive min-h-[44px] rounded-xl border border-white/25 bg-black/40 px-3 py-2 text-sm text-white hover:bg-white/20"
                 >
                   {"<"}
                 </button>
                 <button
                   type="button"
                   onClick={nextHero}
-                  className="interactive min-h-[42px] rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm hover:bg-white/20"
+                  className="interactive min-h-[44px] rounded-xl border border-white/25 bg-black/40 px-3 py-2 text-sm text-white hover:bg-white/20"
                 >
                   {">"}
                 </button>
@@ -368,11 +433,11 @@ export default function Home() {
 
             <div className="absolute left-4 right-4 bottom-4 sm:left-8 sm:right-8 sm:bottom-6">
               <p className="mb-1 text-xs uppercase tracking-[0.22em] text-rose-300/90">Recomendado</p>
-              <h1 className="mb-1 text-2xl font-extrabold text-white sm:text-5xl">{activeHero.title}</h1>
+              <h1 className="mb-1 line-clamp-2 max-w-4xl text-2xl font-extrabold text-white sm:text-5xl">{activeHero.title}</h1>
               <p className="mb-2 text-xs text-neutral-300 sm:mb-3 sm:text-sm">
                 {activeHero.year || "Ano desconocido"} • {extractAnimeGenres(activeHero).slice(0, 3).join(", ") || "Genero"}
               </p>
-              <p className="mb-3 max-w-2xl text-xs text-neutral-200 sm:mb-4 sm:text-base">
+              <p className="mb-3 max-w-2xl line-clamp-3 text-xs text-neutral-200 sm:mb-4 sm:text-base">
                 {shortText(activeHero.description || activeHero.synopsis, 170)}
               </p>
               <Link
@@ -494,4 +559,13 @@ export default function Home() {
     </>
   );
 }
+
+
+
+
+
+
+
+
+
 

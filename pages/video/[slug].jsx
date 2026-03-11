@@ -1,8 +1,12 @@
 ﻿import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
+import Head from "next/head";
+import Link from "next/link";
 import Player from "../../components/Player";
 import PlayerErrorBoundary from "../../components/PlayerErrorBoundary";
 import { getEpisodeThumbnail } from "../../lib/videoPreview";
+import { fetchCatalog } from "../../lib/catalogClient";
+import { trackEvent } from "../../lib/analytics";
 
 function normalizeGenres(genre) {
   if (Array.isArray(genre)) return genre.filter(Boolean).map((g) => String(g).trim());
@@ -114,22 +118,7 @@ function buildSourceOptions(episode) {
   return [];
 }
 
-async function fetchCatalog() {
-  const endpoints = ["/api/getData", "/api/mock/read"];
 
-  for (const endpoint of endpoints) {
-    try {
-      const res = await fetch(endpoint);
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (Array.isArray(data)) return data;
-    } catch {
-      // try next endpoint
-    }
-  }
-
-  throw new Error("No se pudo cargar el catalogo");
-}
 
 export default function VideoPage() {
   const router = useRouter();
@@ -153,6 +142,9 @@ export default function VideoPage() {
 
       try {
         const data = await fetchCatalog();
+        if (!Array.isArray(data) || data.length === 0) {
+          throw new Error("No se pudo cargar el catalogo");
+        }
         const foundAnime = data.find((a) =>
           a.episodes.some((ep) => ep.slug === slug)
         );
@@ -232,6 +224,14 @@ export default function VideoPage() {
     ? `Episodio ${episodeNumber}`
     : video?.title || "Episodio";
   const activeUrl = activeSourceUrl || visibleSources[0]?.url || sourceOptions[0]?.url || "";
+  const activeSourceIndex = visibleSources.findIndex((s) => s.url === activeUrl);
+  const nextSource = activeSourceIndex >= 0 ? visibleSources[activeSourceIndex + 1] : visibleSources[1];
+  useEffect(() => {
+    if (!anime?.id || !video?.slug || typeof window === "undefined") return;
+    const map = JSON.parse(localStorage.getItem("animeLastEpisode") || "{}");
+    map[anime.id] = video.slug;
+    localStorage.setItem("animeLastEpisode", JSON.stringify(map));
+  }, [anime?.id, video?.slug]);
 
   if (isLoading) {
     return (
@@ -257,6 +257,11 @@ export default function VideoPage() {
 
   return (
     <div className="flex min-h-screen flex-col bg-neutral-950 text-white md:flex-row">
+      <Head>
+        <title>{`${anime.title} - ${episodeLabel} | AniStream+`}</title>
+        <meta name="description" content={`Ver ${episodeLabel} de ${anime.title} en AniStream+.`} />
+        <meta property="og:title" content={`${anime.title} - ${episodeLabel} | AniStream+`} />
+      </Head>
       <div className="flex-1 p-3 sm:p-4 md:p-8">
         <div className="mb-2 flex items-start justify-between gap-3">
           <h1 className="fluid-enter text-xl font-bold text-pink-500 sm:text-2xl">
@@ -275,9 +280,20 @@ export default function VideoPage() {
         <p className="mb-1 text-xs text-neutral-400 sm:text-sm">
           {episodeLabel} {video.title && video.title !== episodeLabel ? `- ${video.title}` : ""}
         </p>
-        <p className="mb-1 text-xs text-neutral-500">
-          {anime.year} {genres.length ? `- ${genres.join(", ")}` : ""}
-        </p>
+        <p className="mb-1 text-xs text-neutral-500">{anime.year || "Ano n/d"}</p>
+        {genres.length > 0 ? (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {genres.map((genre) => (
+              <Link
+                key={genre}
+                href={`/categoria/${encodeURIComponent(genre)}`}
+                className="rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[11px] text-neutral-200 hover:border-rose-400/60 hover:bg-white/10"
+              >
+                {genre}
+              </Link>
+            ))}
+          </div>
+        ) : null}
         <p className="mb-4 text-xs text-neutral-500">{views} vistas</p>
 
         {languageOptions.length > 1 && (
@@ -330,6 +346,16 @@ export default function VideoPage() {
               );
             })}
           </div>
+        )}
+
+        {nextSource && (
+          <button
+            type="button"
+            onClick={() => setActiveSourceUrl(nextSource.url)}
+            className="mb-3 rounded-full border border-amber-300/50 bg-amber-400/10 px-4 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-400/20"
+          >
+            Este servidor fallo? Probar siguiente
+          </button>
         )}
 
         <div className="mb-6 aspect-video overflow-hidden rounded-xl bg-black shadow-lg shadow-pink-500/10">
@@ -418,3 +444,9 @@ export default function VideoPage() {
     </div>
   );
 }
+
+
+
+
+
+

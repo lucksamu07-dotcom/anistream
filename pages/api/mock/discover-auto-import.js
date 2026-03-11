@@ -14,6 +14,29 @@ import {
   toId,
 } from "../../../lib/adminCatalog";
 
+const CANDIDATE_CONCURRENCY = 3;
+const EPISODE_CONCURRENCY = 4;
+const SOURCE_CHECK_LIMIT = 4;
+const CANDIDATE_SCAN_FACTOR = 3;
+
+async function mapWithConcurrency(items, concurrency, worker) {
+  const list = Array.isArray(items) ? items : [];
+  const out = new Array(list.length);
+  let cursor = 0;
+
+  const runners = Array.from({ length: Math.max(1, Math.min(concurrency, list.length || 1)) }, async () => {
+    while (true) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= list.length) return;
+      out[index] = await worker(list[index], index);
+    }
+  });
+
+  await Promise.all(runners);
+  return out;
+}
+
 function likelyVideoUrl(url) {
   return /stream|dood|wish|voe|sendvid|mp4upload|filemoon|mixdrop|m3u8|\.mp4|hls|embed|streamtape/i.test(
     String(url || "")
@@ -77,35 +100,48 @@ async function validateSource(source) {
 }
 
 async function validateEpisodes(episodes) {
-  const normalized = [];
-  for (const episode of Array.isArray(episodes) ? episodes : []) {
+  const normalized = await mapWithConcurrency(
+    Array.isArray(episodes) ? episodes : [],
+    EPISODE_CONCURRENCY,
+    async (episode) => {
     const baseSources = Array.isArray(episode?.sources) && episode.sources.length > 0
       ? episode.sources
       : episode?.sourceUrl
       ? [{ label: "Principal", url: episode.sourceUrl, language: episode.language || "original" }]
       : [];
 
-    const validSources = [];
-    for (const source of baseSources.slice(0, 8)) {
-      // eslint-disable-next-line no-await-in-loop
-      const checked = await validateSource(source);
-      if (checked) validSources.push(checked);
-    }
+      const checks = await Promise.all(
+        baseSources.slice(0, SOURCE_CHECK_LIMIT).map((source) => validateSource(source))
+      );
+      const validSources = checks.filter(Boolean);
+      const fallbackSource = baseSources.find((source) => likelyVideoUrl(source?.url));
+      if (validSources.length === 0 && !fallbackSource) return null;
+      const finalSources =
+        validSources.length > 0
+          ? validSources
+          : [
+              {
+                label: String(fallbackSource?.label || "Principal"),
+                url: String(fallbackSource?.url || "").trim(),
+                language: String(fallbackSource?.language || "original").trim().toLowerCase(),
+                status: "unknown",
+                checkedAt: new Date().toISOString(),
+              },
+            ];
 
-    if (validSources.length === 0) continue;
-
-    normalized.push({
+      return {
       id: String(episode?.id || ""),
       title: String(episode?.title || "").trim(),
       slug: String(episode?.slug || "").trim(),
-      sourceUrl: validSources[0].url,
-      language: validSources[0].language || "original",
-      sources: validSources,
+      sourceUrl: finalSources[0].url,
+      language: finalSources[0].language || "original",
+      sources: finalSources,
       updatedAt: new Date().toISOString(),
-    });
-  }
+      };
+    }
+  );
 
-  return normalized.sort(compareEpisodes);
+  return normalized.filter(Boolean).sort(compareEpisodes);
 }
 
 function mergeAnime(catalog, incomingAnime) {
@@ -129,6 +165,42 @@ function mergeAnime(catalog, incomingAnime) {
   return { next, added: false, updated: true };
 }
 
+async function processCandidateTitle(title) {
+  const safeTitle = String(title || "").trim();
+  if (!safeTitle) return { skipped: true, title: safeTitle };
+
+  try {
+    const metaResult = await fetchMetadataDebugByTitle(safeTitle);
+    const metadata = metaResult?.metadata || { title: safeTitle };
+
+    let episodes = Array.isArray(metadata.episodes) ? metadata.episodes : [];
+    if (episodes.length === 0) {
+      episodes = await fetchEpisodesDeepByTitle(safeTitle);
+    }
+
+    const validatedEpisodes = await validateEpisodes(episodes);
+    if (validatedEpisodes.length === 0) {
+      return { skipped: true, title: safeTitle };
+    }
+
+    const anime = {
+      id: toId(metadata.title || safeTitle),
+      title: String(metadata.title || safeTitle).trim(),
+      year: metadata.year || "",
+      genre: normalizeGenres(metadata.genre),
+      description: String(metadata.description || "").trim(),
+      cover: String(metadata.cover || "").trim(),
+      episodes: validatedEpisodes,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    return { skipped: false, anime, title: safeTitle };
+  } catch {
+    return { skipped: true, title: safeTitle };
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ message: "Metodo no permitido" });
   if (!requireAdminAccess(req, res)) return;
@@ -138,9 +210,27 @@ export default async function handler(req, res) {
   try {
     const beforeCatalog = readCatalog();
     const existingTitles = beforeCatalog.map((a) => a.title);
-    const candidates = await discoverNewHentaiCandidates(existingTitles, targetCount * 4);
+    const candidates = await discoverNewHentaiCandidates(existingTitles, targetCount * 6);
 
     const processed = new Set(beforeCatalog.map((a) => normalizeText(a.title)));
+    const scanLimit = Math.max(targetCount * CANDIDATE_SCAN_FACTOR, targetCount + 8);
+    const uniqueTitles = [];
+    for (const candidate of candidates) {
+      const title = String(candidate?.title || "").trim();
+      if (!title) continue;
+      const normTitle = normalizeText(title);
+      if (processed.has(normTitle)) continue;
+      processed.add(normTitle);
+      uniqueTitles.push(title);
+      if (uniqueTitles.length >= scanLimit) break;
+    }
+
+    const processedCandidates = await mapWithConcurrency(
+      uniqueTitles,
+      CANDIDATE_CONCURRENCY,
+      (title) => processCandidateTitle(title)
+    );
+
     let workingCatalog = [...beforeCatalog];
     let added = 0;
     let updated = 0;
@@ -148,56 +238,24 @@ export default async function handler(req, res) {
     const addedTitles = [];
     const skippedTitles = [];
 
-    for (const candidate of candidates) {
+    for (const result of processedCandidates) {
       if (added >= targetCount) break;
-      const title = String(candidate?.title || "").trim();
-      if (!title) continue;
-      const normTitle = normalizeText(title);
-      if (processed.has(normTitle)) continue;
-      processed.add(normTitle);
-
-      try {
-        // eslint-disable-next-line no-await-in-loop
-        const metaResult = await fetchMetadataDebugByTitle(title);
-        const metadata = metaResult?.metadata || { title };
-
-        let episodes = Array.isArray(metadata.episodes) ? metadata.episodes : [];
-        if (episodes.length === 0) {
-          // eslint-disable-next-line no-await-in-loop
-          episodes = await fetchEpisodesDeepByTitle(title);
-        }
-
-        // eslint-disable-next-line no-await-in-loop
-        const validatedEpisodes = await validateEpisodes(episodes);
-        if (validatedEpisodes.length === 0) {
-          skipped += 1;
-          skippedTitles.push(title);
-          continue;
-        }
-
-        const anime = {
-          id: toId(metadata.title || title),
-          title: String(metadata.title || title).trim(),
-          year: metadata.year || "",
-          genre: normalizeGenres(metadata.genre),
-          description: String(metadata.description || "").trim(),
-          cover: String(metadata.cover || "").trim(),
-          episodes: validatedEpisodes,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-
-        const merged = mergeAnime(workingCatalog, anime);
-        workingCatalog = merged.next;
-        if (merged.added) {
-          added += 1;
-          addedTitles.push(anime.title);
-        } else if (merged.updated) {
-          updated += 1;
-        }
-      } catch {
+      if (!result || result.skipped || !result.anime) {
         skipped += 1;
-        skippedTitles.push(title);
+        if (result?.title) skippedTitles.push(result.title);
+        continue;
+      }
+
+      const merged = mergeAnime(workingCatalog, result.anime);
+      workingCatalog = merged.next;
+      if (merged.added) {
+        added += 1;
+        addedTitles.push(result.anime.title);
+      } else if (merged.updated) {
+        updated += 1;
+      } else {
+        skipped += 1;
+        skippedTitles.push(result.title || result.anime.title);
       }
     }
 
@@ -233,4 +291,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ message: "Error en auto import de hentai" });
   }
 }
-

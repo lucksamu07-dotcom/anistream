@@ -50,6 +50,11 @@ img {
   height: auto;
 }
 
+select option {
+  background: #141112;
+  color: #f5efef;
+}
+
 .fluid-enter {
   animation: fluidEnter var(--duration-base) var(--ease-fluid) both;
 }
@@ -99,4 +104,3 @@ img {
     transition: none !important;
   }
 }
-

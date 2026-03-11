@@ -6,18 +6,15 @@ const BLOCKED_API_PATHS = new Set([
   "/api/mock/write",
   "/api/mock/enrich-one",
   "/api/mock/enrich-episodes",
-  "/api/mock/enrich-preview",
   "/api/mock/repair-episode-urls",
   "/api/mock/discover-new",
   "/api/mock/discover-auto-import",
   "/api/mock/add-discovered",
+  "/api/mock/login",
   "/api/mock/admin-dashboard",
-  "/api/mock/admin-search",
   "/api/mock/admin-validate-urls",
   "/api/mock/admin-audit",
   "/api/mock/admin-snapshots",
-  "/api/saveData",
-  "/api/syncStreamtape",
 ]);
 
 function getHostWithoutPort(hostHeader = "") {

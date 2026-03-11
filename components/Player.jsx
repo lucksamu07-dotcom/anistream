@@ -239,12 +239,22 @@ export default function Player({ url, title = "Reproductor" }) {
 
   return (
     <div ref={containerRef} className="relative h-full w-full bg-black">
+      <button
+        type="button"
+        onClick={toggleContainerFullscreen}
+        className="interactive absolute right-3 top-3 z-20 rounded-lg border border-white/25 bg-black/55 px-2.5 py-1.5 text-xs font-semibold text-white backdrop-blur hover:bg-black/75"
+        title="Pantalla completa"
+      >
+        Pantalla completa
+      </button>
       {source.type === "iframe" ? (
         <iframe
           src={source.src}
           className="h-full w-full border-0"
           allowFullScreen
-          allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+          webkitAllowFullScreen
+          mozallowfullscreen="true"
+          allow="autoplay; encrypted-media; fullscreen; picture-in-picture; web-share"
           referrerPolicy="no-referrer-when-downgrade"
           title={title}
         />

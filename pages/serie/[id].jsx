@@ -1,6 +1,9 @@
-﻿import { useRouter } from "next/router";
+import Head from "next/head";
+import Link from "next/link";
+import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 import { getEpisodePreviewUrl, getEpisodeThumbnail } from "../../lib/videoPreview";
+import { fetchCatalog } from "../../lib/catalogClient";
 
 function normalizeGenres(genre) {
   if (Array.isArray(genre)) return genre.filter(Boolean).map((g) => String(g).trim());
@@ -11,6 +14,14 @@ function normalizeGenres(genre) {
       .filter(Boolean);
   }
   return [];
+}
+
+function normalizeText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
 }
 
 function getEpisodeNumber(episode) {
@@ -40,23 +51,6 @@ function compareEpisodes(a, b) {
   );
 }
 
-async function fetchCatalog() {
-  const endpoints = ["/api/getData", "/api/mock/read"];
-
-  for (const endpoint of endpoints) {
-    try {
-      const res = await fetch(endpoint);
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (Array.isArray(data)) return data;
-    } catch {
-      // try next endpoint
-    }
-  }
-
-  throw new Error("No se pudo cargar el catalogo");
-}
-
 export default function SeriePage() {
   const router = useRouter();
   const { id } = router.query;
@@ -64,6 +58,9 @@ export default function SeriePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [hoveredEpisodeSlug, setHoveredEpisodeSlug] = useState("");
+  const [lastEpisodeSlug, setLastEpisodeSlug] = useState("");
+  const [episodeQuery, setEpisodeQuery] = useState("");
+  const [episodeOrder, setEpisodeOrder] = useState("asc");
 
   useEffect(() => {
     if (!id) return;
@@ -74,6 +71,9 @@ export default function SeriePage() {
 
       try {
         const data = await fetchCatalog();
+        if (!Array.isArray(data) || data.length === 0) {
+          throw new Error("No se pudo cargar el catalogo");
+        }
         const found = data.find((a) => a.id === id);
         setAnime(found || null);
         if (!found) setLoadError("No se encontro esta serie.");
@@ -93,6 +93,27 @@ export default function SeriePage() {
     () => [...(anime?.episodes || [])].sort(compareEpisodes),
     [anime]
   );
+  const visibleEpisodes = useMemo(() => {
+    const base = episodeOrder === "desc" ? [...orderedEpisodes].reverse() : orderedEpisodes;
+    const term = normalizeText(episodeQuery);
+    if (!term) return base;
+    return base.filter((ep) => {
+      const titleText = normalizeText(ep.title || "");
+      const slugText = normalizeText(ep.slug || "");
+      const numberText = String(getEpisodeNumber(ep) || "");
+      return titleText.includes(term) || slugText.includes(term) || numberText.includes(term);
+    });
+  }, [orderedEpisodes, episodeOrder, episodeQuery]);
+  const resumeEpisode = useMemo(
+    () => orderedEpisodes.find((ep) => ep.slug === lastEpisodeSlug) || null,
+    [orderedEpisodes, lastEpisodeSlug]
+  );
+
+  useEffect(() => {
+    if (!anime?.id || typeof window === "undefined") return;
+    const raw = JSON.parse(localStorage.getItem("animeLastEpisode") || "{}");
+    setLastEpisodeSlug(String(raw?.[anime.id] || ""));
+  }, [anime?.id]);
 
   if (isLoading) {
     return (
@@ -112,6 +133,15 @@ export default function SeriePage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden text-white">
+      <Head>
+        <title>{`${anime.title} | AniStream+`}</title>
+        <meta
+          name="description"
+          content={String(anime.description || anime.synopsis || "Serie disponible en AniStream+").slice(0, 160)}
+        />
+        <meta property="og:title" content={`${anime.title} | AniStream+`} />
+      </Head>
+
       <div
         className="absolute inset-0 bg-cover bg-center blur-3xl opacity-40"
         style={{
@@ -136,73 +166,138 @@ export default function SeriePage() {
             </h1>
 
             <p className="mb-3 text-sm text-neutral-300 md:text-base">
-              {anime.year} - {genres.length ? genres.join(", ") : "Genero no definido"}
+              {anime.year || "Ano n/d"}
             </p>
+            {genres.length > 0 ? (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {genres.map((genre) => (
+                  <Link
+                    key={genre}
+                    href={`/categoria/${encodeURIComponent(genre)}`}
+                    className="rounded-full border border-white/20 bg-white/5 px-3 py-1 text-xs text-neutral-200 hover:border-rose-400/60 hover:bg-white/10"
+                  >
+                    {genre}
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="mb-3 text-sm text-neutral-400">Genero no definido</p>
+            )}
+            {anime.updatedAt ? (
+              <p className="mb-3 text-xs text-neutral-400">
+                Actualizado: {new Date(anime.updatedAt).toLocaleDateString("es-ES")}
+              </p>
+            ) : null}
 
             <p className="mb-5 text-sm leading-relaxed text-neutral-200 md:text-base">
               {anime.description || anime.synopsis || "Sinopsis no disponible."}
             </p>
 
             {orderedEpisodes.length > 0 && (
-              <button
-                onClick={() => router.push(`/video/${orderedEpisodes[0].slug}`)}
-                className="relative mx-auto flex items-center gap-2 overflow-hidden rounded-full bg-pink-600 px-6 py-3 font-semibold text-white shadow-lg transition-all duration-200 hover:bg-pink-700 hover:shadow-[0_0_15px_rgba(255,0,128,0.4)] md:mx-0"
-              >
-                <span className="animate-pulsePlay text-lg">Play</span>
-                Reproducir primer episodio
-                <span className="pointer-events-none absolute inset-0 animate-shine bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0 hover:opacity-100" />
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => router.push(`/video/${orderedEpisodes[0].slug}`)}
+                  className="relative mx-auto flex items-center gap-2 overflow-hidden rounded-full bg-pink-600 px-6 py-3 font-semibold text-white shadow-lg transition-all duration-200 hover:bg-pink-700 hover:shadow-[0_0_15px_rgba(255,0,128,0.4)] md:mx-0"
+                >
+                  <span className="animate-pulsePlay text-lg">Play</span>
+                  Reproducir primer episodio
+                  <span className="pointer-events-none absolute inset-0 animate-shine bg-gradient-to-r from-transparent via-white/10 to-transparent opacity-0 hover:opacity-100" />
+                </button>
+                {resumeEpisode && (
+                  <button
+                    onClick={() => router.push(`/video/${resumeEpisode.slug}`)}
+                    className="rounded-full border border-white/20 bg-white/10 px-5 py-3 text-sm font-semibold hover:bg-white/20"
+                  >
+                    Continuar donde quedaste
+                  </button>
+                )}
+              </div>
             )}
           </div>
         </div>
 
-        <h2 className="mb-4 text-2xl font-semibold text-pink-400">Episodios</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-2xl font-semibold text-pink-400">Episodios</h2>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-300">
+            <span>Total: {orderedEpisodes.length}</span>
+            <span>Mostrando: {visibleEpisodes.length}</span>
+          </div>
+        </div>
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-          {orderedEpisodes.map((ep) => {
-            const number = getEpisodeNumber(ep);
-            const label = Number.isFinite(number) ? `Episodio ${number}` : ep.title;
-            const thumb = getEpisodeThumbnail(ep, anime.cover);
-            const previewUrl = getEpisodePreviewUrl(ep);
-            const showPreview = hoveredEpisodeSlug === ep.slug && !!previewUrl;
+        <div className="mb-5 flex flex-wrap items-center gap-3">
+          <input
+            className="w-full max-w-sm rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white outline-none placeholder:text-neutral-400"
+            placeholder="Buscar episodio..."
+            value={episodeQuery}
+            onChange={(e) => setEpisodeQuery(e.target.value)}
+          />
+          <button
+            type="button"
+            className="rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-xs text-neutral-100 hover:bg-white/20"
+            onClick={() => setEpisodeOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
+          >
+            Orden: {episodeOrder === "asc" ? "Ascendente" : "Descendente"}
+          </button>
+          <button
+            type="button"
+            className="rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-xs text-neutral-100 hover:bg-white/20"
+            onClick={() => router.push("/#catalogo")}
+          >
+            Ir al catalogo
+          </button>
+        </div>
 
-            return (
-              <div
-                key={ep.slug}
-                className="group cursor-pointer rounded-lg border border-transparent bg-neutral-900/70 p-3 transition-all hover:border-pink-500/40 hover:bg-neutral-800/80"
-                onClick={() => router.push(`/video/${ep.slug}`)}
-                onMouseEnter={() => setHoveredEpisodeSlug(ep.slug)}
-                onMouseLeave={() => setHoveredEpisodeSlug("")}
-              >
-                <div className="relative mb-2 aspect-video overflow-hidden rounded-md bg-black shadow-md">
-                  <img
-                    src={thumb}
-                    alt={ep.title}
-                    className={`h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 ${
-                      showPreview ? "opacity-0" : "opacity-100"
-                    }`}
-                  />
-                  {showPreview && (
-                    <video
-                      src={previewUrl}
-                      muted
-                      autoPlay
-                      loop
-                      playsInline
-                      preload="metadata"
-                      className="absolute inset-0 h-full w-full object-cover"
+        {visibleEpisodes.length === 0 ? (
+          <p className="rounded-lg border border-white/10 bg-white/5 px-4 py-3 text-sm text-neutral-300">
+            No hay episodios con ese filtro.
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+            {visibleEpisodes.map((ep) => {
+              const number = getEpisodeNumber(ep);
+              const label = Number.isFinite(number) ? `Episodio ${number}` : ep.title;
+              const thumb = getEpisodeThumbnail(ep, anime.cover);
+              const previewUrl = getEpisodePreviewUrl(ep);
+              const showPreview = hoveredEpisodeSlug === ep.slug && !!previewUrl;
+
+              return (
+                <div
+                  key={ep.slug}
+                  className="group cursor-pointer rounded-lg border border-transparent bg-neutral-900/70 p-3 transition-all hover:border-pink-500/40 hover:bg-neutral-800/80"
+                  onClick={() => router.push(`/video/${ep.slug}`)}
+                  onMouseEnter={() => setHoveredEpisodeSlug(ep.slug)}
+                  onMouseLeave={() => setHoveredEpisodeSlug("")}
+                >
+                  <div className="relative mb-2 aspect-video overflow-hidden rounded-md bg-black shadow-md">
+                    <img
+                      src={thumb}
+                      alt={ep.title}
+                      className={`h-full w-full object-cover transition-transform duration-300 group-hover:scale-105 ${
+                        showPreview ? "opacity-0" : "opacity-100"
+                      }`}
                     />
+                    {showPreview && (
+                      <video
+                        src={previewUrl}
+                        muted
+                        autoPlay
+                        loop
+                        playsInline
+                        preload="metadata"
+                        className="absolute inset-0 h-full w-full object-cover"
+                      />
+                    )}
+                  </div>
+
+                  <h3 className="truncate text-sm font-semibold text-neutral-100">{label}</h3>
+                  {ep.title && ep.title !== label && (
+                    <p className="mt-1 truncate text-xs text-neutral-400">{ep.title}</p>
                   )}
                 </div>
-
-                <h3 className="truncate text-sm font-semibold text-neutral-100">{label}</h3>
-                {ep.title && ep.title !== label && (
-                  <p className="mt-1 truncate text-xs text-neutral-400">{ep.title}</p>
-                )}
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <style jsx global>{`

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 
 const AUTO_ACCEPT_THRESHOLD = 0.8;
+const ADMIN_ITEMS_PER_PAGE = 16;
 
 function normalizeText(value) {
   return String(value || "")
@@ -45,6 +46,15 @@ function computeClientConfidence(queryTitle, metadata) {
   return Math.max(0, Math.min(1, titleScore * 0.3 + yearScore + genreScore + coverScore + episodesScore));
 }
 
+function hasRequiredMetadata(metadata) {
+  const cover = String(metadata?.cover || "").trim();
+  const description = String(metadata?.description || "").trim();
+  const year = String(metadata?.year || "").trim();
+  const genre = Array.isArray(metadata?.genre) ? metadata.genre.filter(Boolean) : [];
+  const episodes = Array.isArray(metadata?.episodes) ? metadata.episodes.filter(Boolean) : [];
+  return Boolean(cover && description && year && genre.length > 0 && episodes.length > 0);
+}
+
 function mergeAnimeByTitle(catalog, incomingAnime) {
   const normTitle = normalizeText(incomingAnime?.title || "");
   const existing = catalog.find((a) => normalizeText(a.title) === normTitle);
@@ -69,6 +79,8 @@ function mergeAnimeByTitle(catalog, incomingAnime) {
       cover: anime.cover || incomingAnime.cover || "",
       description: anime.description || incomingAnime.description || "",
       genre: [...new Set([...(anime.genre || []), ...(incomingAnime.genre || [])])],
+      source: anime.source || incomingAnime.source || "",
+      sourceLink: anime.sourceLink || incomingAnime.sourceLink || "",
       episodes,
       updatedAt: new Date().toISOString(),
     };
@@ -97,9 +109,14 @@ export default function Admin() {
     description: "",
     cover: "",
     episodes: [],
+    source: "",
+    sourceLink: "",
   });
   const [newEpisode, setNewEpisode] = useState({ title: "", sourceUrl: "" });
   const [lookupResult, setLookupResult] = useState(null);
+  const [lookupCandidates, setLookupCandidates] = useState([]);
+  const [lookupFast, setLookupFast] = useState(false);
+  const [lookupDiagnostics, setLookupDiagnostics] = useState([]);
 
   const [filters, setFilters] = useState({
     q: "",
@@ -109,6 +126,9 @@ export default function Admin() {
     genresMode: "all",
     sort: "recent",
   });
+  const [searchInput, setSearchInput] = useState("");
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [episodeDrafts, setEpisodeDrafts] = useState({});
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -158,6 +178,13 @@ export default function Admin() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setFilters((prev) => (prev.q === searchInput ? prev : { ...prev, q: searchInput }));
+    }, 220);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const addJob = (type, label) => {
     const id = `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -214,11 +241,26 @@ export default function Admin() {
     }
     if (filters.q.trim()) {
       const q = filters.q.trim();
+      const normalizedQ = normalizeText(q);
       list = list
-        .map((a) => ({
-          ...a,
-          _score: Math.max(similarity(q, a.title), similarity(q, a.id), similarity(q, `${a.title} ${(a.genre || []).join(" ")}`)),
-        }))
+        .map((a) => {
+          const title = String(a.title || "");
+          const id = String(a.id || "");
+          const genresText = Array.isArray(a.genre) ? a.genre.join(" ") : String(a.genre || "");
+          const searchable = `${title} ${id} ${genresText}`;
+          const normalizedSearchable = normalizeText(searchable);
+
+          if (normalizedSearchable.includes(normalizedQ)) {
+            return { ...a, _score: 1 };
+          }
+
+          const fuzzy = Math.max(
+            similarity(q, title),
+            similarity(q, id),
+            similarity(q, `${title} ${genresText}`)
+          );
+          return { ...a, _score: fuzzy };
+        })
         .filter((a) => a._score >= 0.2)
         .sort((a, b) => b._score - a._score);
     }
@@ -228,7 +270,38 @@ export default function Admin() {
     return list;
   }, [animes, filters]);
 
+  useEffect(() => {
+    setCatalogPage(1);
+  }, [filters.year, filters.state, filters.genresMode, filters.sort, filters.genres, filters.q]);
+
+  const catalogTotalPages = Math.max(1, Math.ceil(filteredAnimes.length / ADMIN_ITEMS_PER_PAGE));
+  const paginatedAnimes = useMemo(() => {
+    const start = (catalogPage - 1) * ADMIN_ITEMS_PER_PAGE;
+    return filteredAnimes.slice(start, start + ADMIN_ITEMS_PER_PAGE);
+  }, [filteredAnimes, catalogPage]);
+
+  useEffect(() => {
+    if (catalogPage > catalogTotalPages) {
+      setCatalogPage(catalogTotalPages);
+    }
+  }, [catalogPage, catalogTotalPages]);
+
   const selectedAnimeData = useMemo(() => animes.find((a) => a.id === selectedAnime) || null, [animes, selectedAnime]);
+
+  useEffect(() => {
+    if (!selectedAnimeData) {
+      setEpisodeDrafts({});
+      return;
+    }
+    const nextDrafts = {};
+    for (const ep of Array.isArray(selectedAnimeData.episodes) ? selectedAnimeData.episodes : []) {
+      nextDrafts[ep.id] = {
+        title: String(ep.title || ""),
+        sourceUrl: String(ep.sourceUrl || ""),
+      };
+    }
+    setEpisodeDrafts(nextDrafts);
+  }, [selectedAnimeData]);
 
   const saveToFile = async () => {
     try {
@@ -245,20 +318,54 @@ export default function Admin() {
     if (!title) return setSyncMessage("Escribe el nombre de la serie");
     try {
       const result = await runJob("lookup", `Autocompletar: ${title}`, async () =>
-        request("/api/mock/enrich-one", { method: "POST", body: JSON.stringify({ title }) })
+        request("/api/mock/enrich-one", {
+          method: "POST",
+          body: JSON.stringify({ title, mode: lookupFast ? "fast" : "full" }),
+        })
       );
-      const confidence = Math.max(Number(result?.confidence || 0), computeClientConfidence(title, result?.metadata || {}));
-      setLookupResult({ ...result, confidence, accepted: confidence >= AUTO_ACCEPT_THRESHOLD });
+      const baseCandidates = Array.isArray(result?.candidates) ? result.candidates : [];
+      const normalizedCandidates = baseCandidates
+        .filter((item) => item?.metadata && hasRequiredMetadata(item.metadata))
+        .map((item) => {
+          const confidence = Math.max(
+            Number(item?.confidence || 0),
+            computeClientConfidence(title, item?.metadata || {})
+          );
+          return { ...item, confidence, accepted: confidence >= AUTO_ACCEPT_THRESHOLD };
+        })
+        .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0));
+
+      const fallbackConfidence = Math.max(
+        Number(result?.confidence || 0),
+        computeClientConfidence(title, result?.metadata || {})
+      );
+      const fallbackTop = result?.metadata && hasRequiredMetadata(result.metadata)
+        ? { ...result, confidence: fallbackConfidence, accepted: fallbackConfidence >= AUTO_ACCEPT_THRESHOLD }
+        : null;
+      const top = normalizedCandidates[0] || fallbackTop || null;
+      if (!top) {
+        setLookupCandidates([]);
+        setLookupResult(null);
+        setSyncMessage("No se encontraron resultados completos (portada, sinopsis, genero, ano y episodios).");
+        return;
+      }
+
+      setLookupCandidates(normalizedCandidates);
+      setLookupDiagnostics(Array.isArray(result?.diagnostics) ? result.diagnostics : []);
+      setLookupResult(top);
       setSyncMessage("Autocompletado terminado. Revisa los datos.");
     } catch (err) {
       setSyncMessage(`No se pudo autocompletar: ${err.message}`);
       setLookupResult(null);
+      setLookupCandidates([]);
+      setLookupDiagnostics([]);
     }
   };
 
-  const applyLookupResult = () => {
-    if (!lookupResult?.metadata) return;
-    const meta = lookupResult.metadata;
+  const applyLookupResult = (candidate = null) => {
+    const selected = candidate?.metadata ? candidate : lookupResult;
+    if (!selected?.metadata) return;
+    const meta = selected.metadata;
     setNewAnime((prev) => ({
       ...prev,
       title: prev.title || meta.title || "",
@@ -267,6 +374,8 @@ export default function Admin() {
       description: prev.description || meta.description || "",
       genre: splitGenres(prev.genre).length > 0 ? prev.genre : splitGenres(meta.genre).join(", "),
       episodes: Array.isArray(prev.episodes) && prev.episodes.length > 0 ? prev.episodes : Array.isArray(meta.episodes) ? meta.episodes : [],
+      source: prev.source || selected.source || "",
+      sourceLink: prev.sourceLink || selected.link || "",
     }));
   };
 
@@ -281,12 +390,23 @@ export default function Admin() {
       description: String(newAnime.description || "").trim(),
       cover: String(newAnime.cover || "").trim(),
       episodes: Array.isArray(newAnime.episodes) ? newAnime.episodes : [],
+      source: String(newAnime.source || "").trim(),
+      sourceLink: String(newAnime.sourceLink || "").trim(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     setAnimes((prev) => mergeAnimeByTitle(prev, nextAnime));
     setSyncMessage("Serie agregada/actualizada sin duplicados");
-    setNewAnime({ title: "", year: "", genre: "", description: "", cover: "", episodes: [] });
+    setNewAnime({
+      title: "",
+      year: "",
+      genre: "",
+      description: "",
+      cover: "",
+      episodes: [],
+      source: "",
+      sourceLink: "",
+    });
     setLookupResult(null);
   };
 
@@ -296,13 +416,21 @@ export default function Admin() {
         progress(35, "Consultando fuentes...");
         const result = await request("/api/mock/discover-new", {
           method: "POST",
-          body: JSON.stringify({ existingTitles: animes.map((a) => a.title), limit: 30 }),
+          body: JSON.stringify({ existingTitles: animes.map((a) => a.title), limit: 80 }),
         });
         progress(85, "Procesando resultados...");
         return result;
       });
       const currentTitles = new Set(animes.map((a) => normalizeText(a.title)));
-      const unique = (Array.isArray(data?.candidates) ? data.candidates : []).filter((c) => !currentTitles.has(normalizeText(c.title)));
+      const unique = (Array.isArray(data?.candidates) ? data.candidates : []).filter((c) => {
+        if (currentTitles.has(normalizeText(c.title))) return false;
+        const cover = String(c?.cover || "").trim();
+        const description = String(c?.description || "").trim();
+        const year = String(c?.year || "").trim();
+        const genre = Array.isArray(c?.genre) ? c.genre.filter(Boolean) : [];
+        const episodesCount = Number(c?.episodesCount || 0);
+        return Boolean(cover && description && year && genre.length > 0 && episodesCount > 0);
+      });
       setDiscovered(unique);
       setSyncMessage(`Nuevos resultados: ${unique.length}`);
     } catch (err) {
@@ -310,35 +438,32 @@ export default function Admin() {
     }
   };
 
-  const autoImport20 = async () => {
-    try {
-      const data = await runJob("auto-import", "Auto agregar 20 nuevos hentai", async (progress) => {
-        progress(20, "Buscando nuevos...");
-        const result = await request("/api/mock/discover-auto-import", {
-          method: "POST",
-          body: JSON.stringify({ count: 20 }),
-        });
-        progress(90, "Aplicando resultados al catalogo...");
-        return result;
-      });
-
-      await refreshCore();
-      setSyncMessage(
-        `${data.message || "Proceso completado"} | Nuevos: ${data.added || 0} | Actualizados: ${data.updated || 0} | Omitidos: ${data.skipped || 0}`
-      );
-    } catch (err) {
-      setSyncMessage(`Error en auto import: ${err.message}`);
-    }
-  };
 
   const addDiscovered = async (candidate) => {
     try {
       const data = await runJob("add-discovered", `Agregar: ${candidate.title}`, async () =>
-        request("/api/mock/add-discovered", { method: "POST", body: JSON.stringify({ title: candidate.title }) })
+        request("/api/mock/add-discovered", {
+          method: "POST",
+          body: JSON.stringify({ title: candidate.title, source: candidate.source, link: candidate.link }),
+        })
       );
-      setAnimes((prev) => mergeAnimeByTitle(prev, data.anime));
+      let incomingAnime = data.anime;
+      let episodesCount = Array.isArray(incomingAnime?.episodes) ? incomingAnime.episodes.length : 0;
+
+      if (episodesCount === 0) {
+        const fallback = await runJob("episodes", `Reintento episodios: ${candidate.title}`, async () =>
+          request("/api/mock/enrich-episodes", { method: "POST", body: JSON.stringify({ title: candidate.title }) })
+        );
+        const retryEpisodes = Array.isArray(fallback?.episodes) ? fallback.episodes : [];
+        if (retryEpisodes.length > 0) {
+          incomingAnime = { ...incomingAnime, episodes: retryEpisodes };
+          episodesCount = retryEpisodes.length;
+        }
+      }
+
+      setAnimes((prev) => mergeAnimeByTitle(prev, incomingAnime));
       setDiscovered((prev) => prev.filter((c) => c.title !== candidate.title));
-      setSyncMessage(`Agregado: ${candidate.title}`);
+      setSyncMessage(`Agregado: ${candidate.title} | episodios: ${episodesCount}`);
     } catch (err) {
       setSyncMessage(`No se pudo agregar: ${err.message}`);
     }
@@ -351,9 +476,11 @@ export default function Admin() {
         request("/api/mock/enrich-episodes", { method: "POST", body: JSON.stringify({ title: selectedAnimeData.title }) })
       );
       const incoming = Array.isArray(data?.episodes) ? data.episodes : [];
-      setAnimes((prev) =>
-        prev.map((a) => (a.id === selectedAnimeData.id ? (mergeAnimeByTitle(prev, { ...a, episodes: incoming }).find((x) => x.id === a.id) || a) : a))
-      );
+      setAnimes((prev) => {
+        const base = prev.find((a) => a.id === selectedAnimeData.id);
+        if (!base) return prev;
+        return mergeAnimeByTitle(prev, { ...base, episodes: incoming });
+      });
       setSyncMessage(`Episodios encontrados: ${incoming.length}`);
     } catch (err) {
       setSyncMessage(`Error extrayendo episodios: ${err.message}`);
@@ -405,6 +532,80 @@ export default function Admin() {
       prev.map((a) => (a.id === selectedAnimeData.id ? { ...a, episodes: [...(a.episodes || []), nextEp], updatedAt: new Date().toISOString() } : a))
     );
     setNewEpisode({ title: "", sourceUrl: "" });
+  };
+
+  const updateEpisodeDraft = (episodeId, field, value) => {
+    setEpisodeDrafts((prev) => ({
+      ...prev,
+      [episodeId]: {
+        ...(prev[episodeId] || {}),
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveEpisodeInline = (episodeId) => {
+    if (!selectedAnimeData) return;
+    const draft = episodeDrafts[episodeId];
+    if (!draft) return;
+
+    setAnimes((prev) =>
+      prev.map((anime) => {
+        if (anime.id !== selectedAnimeData.id) return anime;
+        const episodes = (anime.episodes || []).map((ep) => {
+          if (ep.id !== episodeId) return ep;
+          const nextTitle = String(draft.title || "").trim() || ep.title;
+          const nextUrl = String(draft.sourceUrl || "").trim();
+          let sources = Array.isArray(ep.sources) ? [...ep.sources] : [];
+
+          if (nextUrl) {
+            const principalIdx = sources.findIndex((s) => String(s?.label || "").toLowerCase() === "principal");
+            const principal = {
+              label: "Principal",
+              url: nextUrl,
+              language: "original",
+              status: "unknown",
+            };
+            if (principalIdx >= 0) {
+              sources[principalIdx] = { ...sources[principalIdx], ...principal };
+            } else {
+              sources = [principal, ...sources.filter((s) => String(s?.url || "").trim() !== nextUrl)];
+            }
+          }
+
+          return {
+            ...ep,
+            title: nextTitle,
+            sourceUrl: nextUrl,
+            sources,
+            updatedAt: new Date().toISOString(),
+          };
+        });
+        return { ...anime, episodes, updatedAt: new Date().toISOString() };
+      })
+    );
+    setSyncMessage("Episodio actualizado en memoria. Recuerda guardar cambios.");
+  };
+
+  const removeEpisode = (episodeId) => {
+    if (!selectedAnimeData) return;
+    if (!confirm("Eliminar este episodio?")) return;
+    setAnimes((prev) =>
+      prev.map((anime) => {
+        if (anime.id !== selectedAnimeData.id) return anime;
+        return {
+          ...anime,
+          episodes: (anime.episodes || []).filter((ep) => ep.id !== episodeId),
+          updatedAt: new Date().toISOString(),
+        };
+      })
+    );
+    setEpisodeDrafts((prev) => {
+      const next = { ...prev };
+      delete next[episodeId];
+      return next;
+    });
+    setSyncMessage("Episodio eliminado en memoria. Recuerda guardar cambios.");
   };
 
   const handleRollback = async (snapshot) => {
@@ -471,7 +672,12 @@ export default function Admin() {
       <div className="mb-6 rounded-xl bg-neutral-900 p-4">
         <h2 className="mb-3 text-xl font-semibold">Busqueda y filtros avanzados</h2>
         <div className="grid gap-3 md:grid-cols-5">
-          <input className="input md:col-span-2" placeholder="Buscar por titulo / ID / genero" value={filters.q} onChange={(e) => setFilters((f) => ({ ...f, q: e.target.value }))} />
+          <input
+            className="input md:col-span-2"
+            placeholder="Buscar por titulo / ID / genero"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
           <select className="input" value={filters.year} onChange={(e) => setFilters((f) => ({ ...f, year: e.target.value }))}>
             <option value="">Todos los años</option>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -521,7 +727,7 @@ export default function Admin() {
           <h2 className="mb-2 text-xl font-semibold">Agregar serie (manual + autocompletar)</h2>
           <div className="grid gap-2 md:grid-cols-2">
             <input className="input md:col-span-2" placeholder="Titulo" value={newAnime.title} onChange={(e) => setNewAnime((a) => ({ ...a, title: e.target.value }))} />
-            <input className="input" placeholder="Año" value={newAnime.year} onChange={(e) => setNewAnime((a) => ({ ...a, year: e.target.value }))} />
+            <input className="input" placeholder="Ano" value={newAnime.year} onChange={(e) => setNewAnime((a) => ({ ...a, year: e.target.value }))} />
             <input className="input" placeholder="Generos (coma)" value={newAnime.genre} onChange={(e) => setNewAnime((a) => ({ ...a, genre: e.target.value }))} />
             <input className="input md:col-span-2" placeholder="Portada URL" value={newAnime.cover} onChange={(e) => setNewAnime((a) => ({ ...a, cover: e.target.value }))} />
           </div>
@@ -529,16 +735,98 @@ export default function Admin() {
           <div className="mt-3 flex flex-wrap gap-2">
             <button className="btn bg-indigo-600 hover:bg-indigo-700" onClick={handleLookup}>Buscar y autocompletar</button>
             <button className="btn bg-pink-600 hover:bg-pink-700" onClick={handleAddAnime}>Agregar / consolidar</button>
+            <label className="ml-1 flex items-center gap-2 text-xs text-neutral-300">
+              <input
+                type="checkbox"
+                checked={lookupFast}
+                onChange={(e) => setLookupFast(e.target.checked)}
+              />
+              Modo rapido
+            </label>
           </div>
           {lookupResult?.metadata && (
             <div className="mt-3 rounded-lg border border-white/10 bg-black/30 p-3 text-sm">
               <p className="text-neutral-400">
                 Fuente: {lookupResult.source || "-"} | Confianza: <span className={lookupResult.accepted ? "text-green-400" : "text-amber-400"}>{(Number(lookupResult.confidence || 0) * 100).toFixed(1)}%</span>
               </p>
+              {lookupResult.link ? (
+                <a
+                  className="text-xs text-sky-400 underline"
+                  href={lookupResult.link}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Ver pagina origen
+                </a>
+              ) : null}
               <p>Titulo detectado: {lookupResult.metadata.title || "-"}</p>
               <p>Episodios detectados: {Array.isArray(lookupResult.metadata.episodes) ? lookupResult.metadata.episodes.length : 0}</p>
               {lookupResult.metadata.cover ? <img src={lookupResult.metadata.cover} alt="cover" className="mt-2 h-32 w-24 rounded object-cover" /> : null}
               <button className="btn mt-2 bg-emerald-600 hover:bg-emerald-700" onClick={applyLookupResult}>Aplicar datos</button>
+
+              {lookupCandidates.length > 1 && (
+                <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+                  <p className="text-xs text-neutral-400">Mas resultados:</p>
+                  {lookupCandidates.map((candidate, idx) => (
+                    <div key={`${candidate.source}-${candidate.metadata?.title || idx}`} className="rounded bg-white/5 p-2">
+                      <p className="text-sm font-semibold">
+                        {candidate.metadata?.title || "-"}{" "}
+                        <span className="text-xs text-neutral-400">
+                          ({candidate.source || "fuente"} - {(Number(candidate.confidence || 0) * 100).toFixed(1)}%)
+                        </span>
+                      </p>
+                      <p className="text-xs text-neutral-300">
+                        Episodios: {Array.isArray(candidate.metadata?.episodes) ? candidate.metadata.episodes.length : 0}
+                      </p>
+                      {candidate.link ? (
+                        <a
+                          className="text-xs text-sky-400 underline"
+                          href={candidate.link}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Ver pagina origen
+                        </a>
+                      ) : null}
+                      <button
+                        className="btn mt-2 bg-slate-700 hover:bg-slate-600"
+                        onClick={() => {
+                          setLookupResult(candidate);
+                          applyLookupResult(candidate);
+                        }}
+                      >
+                        Usar este resultado
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {lookupDiagnostics.length > 0 && (
+                <div className="mt-3 space-y-2 border-t border-white/10 pt-3">
+                  <p className="text-xs text-neutral-400">Diagnostico de fuentes:</p>
+                  {lookupDiagnostics.map((item, idx) => (
+                    <div key={`${item.source}-${item.title}-${idx}`} className="rounded bg-white/5 p-2 text-xs">
+                      <p className="font-semibold text-neutral-200">
+                        {item.title || "-"}{" "}
+                        <span className="text-neutral-400">({item.source || "fuente"})</span>
+                      </p>
+                      <p className="text-neutral-400">
+                        Faltan: {Array.isArray(item.missing) && item.missing.length > 0 ? item.missing.join(", ") : "nada"}
+                      </p>
+                      {item.link ? (
+                        <a
+                          className="text-sky-400 underline"
+                          href={item.link}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Ver pagina origen
+                        </a>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -547,7 +835,6 @@ export default function Admin() {
           <h2 className="mb-2 text-xl font-semibold">Automatizacion</h2>
           <div className="flex flex-wrap gap-2">
             <button className="btn bg-violet-600 hover:bg-violet-700" onClick={discoverNew}>Buscar nuevos hentai</button>
-            <button className="btn bg-fuchsia-600 hover:bg-fuchsia-700" onClick={autoImport20}>Auto agregar 20 (validado)</button>
             <button className="btn bg-cyan-600 hover:bg-cyan-700" onClick={autoFillEpisodes}>Extraer episodios</button>
             <button className="btn bg-blue-600 hover:bg-blue-700" onClick={repairUrls}>Reparar URLs</button>
             <button className="btn bg-sky-600 hover:bg-sky-700" onClick={validateUrls}>Validar URLs</button>
@@ -583,8 +870,21 @@ export default function Admin() {
                 {item.cover ? <img src={item.cover} alt={item.title} className="mb-2 h-40 w-full rounded object-cover" /> : <div className="mb-2 flex h-40 items-center justify-center rounded bg-neutral-700 text-xs text-neutral-400">Sin portada</div>}
                 <p className="line-clamp-2 text-sm font-semibold">{item.title}</p>
                 <p className="text-xs text-neutral-400">
-                  {item.year || "Año n/d"} | {(Number(item.confidence || 0) * 100).toFixed(0)}%
+                  {item.year || "Ano n/d"} | {(Number(item.confidence || 0) * 100).toFixed(0)}%
                 </p>
+                <p className="text-xs text-neutral-500">
+                  Fuente: {item.source || "desconocida"}
+                </p>
+                {item.link ? (
+                  <a
+                    className="text-xs text-sky-400 underline"
+                    href={item.link}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Ver pagina origen
+                  </a>
+                ) : null}
                 <button className="btn mt-2 w-full bg-emerald-600 hover:bg-emerald-700" onClick={() => addDiscovered(item)}>Agregar a AniStream</button>
               </div>
             ))}
@@ -593,9 +893,14 @@ export default function Admin() {
       )}
 
       <div className="mb-6 rounded-xl bg-neutral-900 p-4">
-        <h2 className="mb-2 text-xl font-semibold">Catalogo ({filteredAnimes.length})</h2>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-xl font-semibold">Catalogo ({filteredAnimes.length})</h2>
+          <p className="text-xs text-neutral-400">
+            Pagina {catalogPage} de {catalogTotalPages}
+          </p>
+        </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {filteredAnimes.map((a) => (
+          {paginatedAnimes.map((a) => (
             <div key={a.id} className="rounded-lg bg-neutral-800 p-2">
               {a.cover ? <img src={a.cover} alt={a.title} className="mb-2 h-40 w-full rounded object-cover" /> : <div className="mb-2 flex h-40 items-center justify-center rounded bg-neutral-700 text-xs text-neutral-400">Sin portada</div>}
               <p className="line-clamp-2 text-sm font-semibold">{a.title}</p>
@@ -612,6 +917,35 @@ export default function Admin() {
             </div>
           ))}
         </div>
+        {catalogTotalPages > 1 && (
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <button
+              className="btn bg-neutral-700 hover:bg-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={catalogPage === 1}
+              onClick={() => setCatalogPage((p) => Math.max(1, p - 1))}
+            >
+              Anterior
+            </button>
+            {Array.from({ length: catalogTotalPages }, (_, i) => i + 1)
+              .slice(Math.max(0, catalogPage - 3), Math.max(0, catalogPage - 3) + 5)
+              .map((page) => (
+                <button
+                  key={page}
+                  className={`btn ${catalogPage === page ? "bg-pink-700" : "bg-neutral-700 hover:bg-neutral-600"}`}
+                  onClick={() => setCatalogPage(page)}
+                >
+                  {page}
+                </button>
+              ))}
+            <button
+              className="btn bg-neutral-700 hover:bg-neutral-600 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={catalogPage === catalogTotalPages}
+              onClick={() => setCatalogPage((p) => Math.min(catalogTotalPages, p + 1))}
+            >
+              Siguiente
+            </button>
+          </div>
+        )}
       </div>
 
       {selectedAnimeData && (
@@ -619,13 +953,29 @@ export default function Admin() {
           <h2 className="mb-2 text-xl font-semibold">Episodios de {selectedAnimeData.title}</h2>
           <div className="space-y-2">
             {(selectedAnimeData.episodes || []).map((ep) => (
-              <div key={ep.id} className="flex flex-wrap items-center justify-between gap-2 rounded bg-neutral-800 p-2 text-sm">
-                <div>
-                  <p>{ep.title}</p>
-                  <p className="text-xs text-neutral-400">{ep.sourceUrl || "Sin URL"}</p>
+              <div key={ep.id} className="rounded bg-neutral-800 p-2 text-sm">
+                <div className="grid gap-2 md:grid-cols-[1fr_1fr_auto_auto]">
+                  <input
+                    className="input"
+                    value={episodeDrafts[ep.id]?.title ?? ep.title ?? ""}
+                    onChange={(e) => updateEpisodeDraft(ep.id, "title", e.target.value)}
+                    placeholder="Titulo del episodio"
+                  />
+                  <input
+                    className="input"
+                    value={episodeDrafts[ep.id]?.sourceUrl ?? ep.sourceUrl ?? ""}
+                    onChange={(e) => updateEpisodeDraft(ep.id, "sourceUrl", e.target.value)}
+                    placeholder="URL del episodio"
+                  />
+                  <button className="btn bg-emerald-700 hover:bg-emerald-600" onClick={() => saveEpisodeInline(ep.id)}>
+                    Guardar
+                  </button>
+                  <button className="btn bg-red-700 hover:bg-red-600" onClick={() => removeEpisode(ep.id)}>
+                    Borrar
+                  </button>
                 </div>
-                <div className="flex flex-wrap gap-1">
-                  {(ep.sources || []).slice(0, 3).map((s) => (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {(ep.sources || []).slice(0, 4).map((s) => (
                     <span key={`${ep.id}-${s.url}`} className={`rounded px-2 py-0.5 text-[10px] ${s.status === "up" ? "bg-emerald-700/60" : s.status === "down" ? "bg-red-700/60" : "bg-neutral-700"}`}>
                       {s.label}: {s.status || "unknown"}
                     </span>

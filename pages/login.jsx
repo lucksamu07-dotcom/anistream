@@ -16,15 +16,26 @@ export default function Login() {
   const handleLogin = (e) => {
     e.preventDefault();
 
-    const USER = "admin2025";
-    const PASS = "anistream959123";
-
-    if (user === USER && password === PASS) {
-      localStorage.setItem("loggedIn", "true");
-      router.push("/admin");
-    } else {
-      setError("Usuario o contrasena incorrectos");
-    }
+    setError("");
+    fetch("/api/mock/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ user, password }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data?.message || "Credenciales invalidas");
+        }
+        return res.json();
+      })
+      .then(() => {
+        localStorage.setItem("loggedIn", "true");
+        router.push("/admin");
+      })
+      .catch((err) => {
+        setError(err.message || "Usuario o contrasena incorrectos");
+      });
   };
 
   return (
