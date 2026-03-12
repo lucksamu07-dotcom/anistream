@@ -27,6 +27,7 @@ export default function Navbar() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchSuppressed, setSearchSuppressed] = useState(false);
   const searchAreaRef = useRef(null);
+  const mobileSearchAreaRef = useRef(null);
   const searchInputRef = useRef(null);
   const showSearch = !router.pathname.startsWith("/admin") && !router.pathname.startsWith("/login");
 
@@ -67,10 +68,11 @@ export default function Navbar() {
 
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (!searchAreaRef.current) return;
-      if (!searchAreaRef.current.contains(event.target)) {
-        setSearchFocused(false);
-      }
+      const desktopArea = searchAreaRef.current;
+      const mobileArea = mobileSearchAreaRef.current;
+      if (!desktopArea && !mobileArea) return;
+      if (desktopArea?.contains(event.target) || mobileArea?.contains(event.target)) return;
+      setSearchFocused(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -255,6 +257,62 @@ export default function Navbar() {
           </Link>
         </nav>
       </div>
+
+      {showSearch && (
+        <div ref={mobileSearchAreaRef} className="relative px-4 pb-3 md:hidden">
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2">
+            <svg viewBox="0 0 24 24" className="h-4 w-4 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3-3" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Buscar hentai..."
+              className="w-full bg-transparent text-sm text-neutral-100 outline-none placeholder:text-neutral-400"
+              value={searchTerm}
+              onFocus={() => setSearchFocused(true)}
+              onChange={(e) => onSearchChange(e.target.value)}
+            />
+            <button
+              type="button"
+              onClick={onToggleFilters}
+              className="rounded-lg border border-white/10 bg-white/10 px-2.5 py-1 text-xs text-neutral-100 hover:bg-white/20"
+            >
+              Filtros
+            </button>
+          </div>
+
+          {searchFocused && searchTerm.trim() && !searchSuppressed && (
+            <div className="absolute left-4 right-4 top-[calc(100%+8px)] z-50 overflow-hidden rounded-xl border border-white/10 bg-[#130f11]/95 shadow-2xl">
+              <div className="max-h-[340px] overflow-y-auto p-2">
+                {liveSuggestions.length > 0 ? (
+                  liveSuggestions.map((anime) => (
+                    <button
+                      key={anime.id}
+                      type="button"
+                      onClick={() => {
+                        trackEvent("search_select", { animeId: anime.id, term: searchTerm });
+                        router.push(`/serie/${anime.id}`);
+                      }}
+                      className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-white/10"
+                    >
+                      <img src={anime.cover} alt={anime.title} className="h-12 w-9 rounded object-cover" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">{anime.title}</p>
+                        <p className="truncate text-xs text-neutral-300">
+                          {anime.year || "Ano n/d"} - {extractAnimeGenres(anime).slice(0, 2).join(", ") || "Sin genero"}
+                        </p>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <p className="px-2 py-2 text-sm text-neutral-400">No hay coincidencias.</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {open && (
         <nav className="fluid-enter mx-auto flex max-w-7xl flex-col gap-2 px-4 pb-3 text-sm text-neutral-200 md:hidden">
